@@ -1,0 +1,1113 @@
+
+================================================================================
+  M I R O  —  AI ACADEMIC ASSISTANT
+  COMPREHENSIVE IMPLEMENTATION PLAN
+  Frontend + Backend · Full Stack · No Code · Pure Instructions
+================================================================================
+
+STACK OVERVIEW
+──────────────
+Frontend   : React.js + Vite · shadcn/ui · AnimateUI · Unsplash API · Tailwind CSS
+Backend    : FastAPI (Python) · LangGraph · Celery + Redis
+Auth       : Firebase Authentication (Google Sign-In)
+Database   : Firebase Firestore + Firebase Storage
+AI Engine  : Gemini 2.0 Flash API (Google)
+OCR        : OCR.space API (fallback for scanned docs)
+Data APIs  : Gmail API v1 · Google Classroom API v1 · Google Drive API v3
+Deployment : Firebase Hosting (frontend) · Railway/Render (backend)
+
+
+================================================================================
+  PART 1 — FRONTEND DESIGN SYSTEM
+================================================================================
+
+DESIGN PHILOSOPHY
+─────────────────
+Miro's UI should feel like a premium academic command center — not a student
+productivity app. Think Bloomberg Terminal meets Notion meets Linear. Every
+screen should feel purposeful, fast, and alive. Dark-first design with a
+warm amber/cream accent palette to signal intelligence and trust.
+
+COLOR PALETTE
+─────────────
+Primary Background   : #0A0A0F (near-black, deep space)
+Secondary Surface    : #111118 (card backgrounds)
+Tertiary Surface     : #1A1A24 (elevated panels)
+Primary Accent       : #F5C842 (Miro amber — used for highlights, CTAs)
+Secondary Accent     : #6366F1 (indigo — secondary actions, AI states)
+Success              : #10B981 (teal green)
+Danger               : #EF4444 (red)
+Text Primary         : #F1F0ED (off-white)
+Text Secondary       : #8B8A8F (muted gray)
+Text Tertiary        : #4A4A55 (dim gray)
+Border               : rgba(255,255,255,0.06)
+
+TYPOGRAPHY SCALE
+────────────────
+Display  : Inter 700 · 48–64px · letter-spacing -0.04em
+Heading1 : Inter 600 · 32px · letter-spacing -0.02em
+Heading2 : Inter 500 · 24px
+Body     : Inter 400 · 15px · line-height 1.7
+Caption  : Inter 400 · 12px · text-secondary color
+Code     : JetBrains Mono 400 · 13px
+
+ANIMATION PRINCIPLES (AnimateUI Library)
+─────────────────────────────────────────
+Every element must feel alive. Rules:
+· Entrance: fade-up (translateY 20px → 0, opacity 0 → 1) · 400ms ease-out
+· Stagger children: 60ms delay between each list item
+· Hover: scale(1.02) on cards · 150ms
+· Page transitions: crossfade + slight blur · 300ms
+· Loading states: shimmer skeleton, never spinners
+· Success states: confetti burst (AnimateUI) then settle
+· AI processing: pulsing amber glow on active card
+· Number counters: animate up on mount (AnimateUI Counter)
+· Scroll-triggered: elements animate in as user scrolls down
+
+SHADCN/UI COMPONENT USAGE GUIDELINES
+──────────────────────────────────────
+Use shadcn/ui as base, then layer AnimateUI motion on top:
+· Dialog     → Use for file preview modals (blur backdrop, slide-up motion)
+· Sheet      → Right-side panel for task details
+· Card       → All content cards (override with dark surface colors)
+· Badge      → Classification labels (Assignment / Notes / Announcement)
+· Progress   → Processing pipeline progress bar
+· Tabs       → Dashboard section switching
+· Command    → Global search palette (CMD+K)
+· Tooltip    → Hover info on all icons
+· Skeleton   → Loading state for every data-fetched element
+· Toast      → Notification system (top-right, animated slide-in)
+· Avatar     → User profile photo (from Firebase Auth)
+· Separator  → Section dividers (very low opacity)
+· ScrollArea → All scrollable lists (custom scrollbar)
+
+UNSPLASH API USAGE
+──────────────────
+Unsplash provides dynamic academic imagery throughout the app.
+Usage points:
+· Login/Onboarding Screen   : Full-screen background image · query="library study"
+· Empty States              : Contextual images when no data yet
+· Course Cards              : Subject-based images · query="{subject name}"
+· Feature illustration banners inside onboarding walkthrough
+· Profile background header : query="abstract minimal"
+API endpoint : https://api.unsplash.com/photos/random?query={term}&orientation=landscape
+Key rule     : Always show images with a gradient overlay (bottom black fade)
+               so text on top is always legible.
+Cache        : Store fetched Unsplash URLs in localStorage · refresh every 24h
+
+
+================================================================================
+  PART 2 — FRONTEND PAGES & FEATURES
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PAGE 01 — THE LANDING GATE (Login Screen)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONCEPT: "Step into your command center"
+
+LAYOUT:
+· Full viewport split — 60% left / 40% right
+· LEFT SIDE: Dynamic Unsplash background image (query="university library dark")
+  with deep gradient overlay. Animated text headline fades in:
+  "Your academic life, automated." — Inter 700, large display size.
+  Below: three animated bullet points slide in staggered:
+    – "Reads your Gmail and Classroom automatically"
+    – "Understands every attachment"
+    – "Generates assignments and summaries"
+  Below bullets: small floating cards (AnimateUI float animation) showing
+  sample outputs — an assignment thumbnail, a summary card.
+
+· RIGHT SIDE: Clean dark panel. Miro logo at top (wordmark + amber dot).
+  Centered vertically:
+    – "Welcome to Miro" heading
+    – Subtitle: "Sign in with your Google account to connect Gmail & Classroom"
+    – shadcn/ui Button (Google Sign-In) — styled with amber border glow on hover
+    – Below button: small text explaining what permissions will be requested
+    – Privacy note: "We never store your emails. Processed locally."
+
+ANIMATION SEQUENCE (AnimateUI):
+1. Background image fades in (500ms)
+2. Gradient overlay fades in (300ms)
+3. Left headline slides up (400ms)
+4. Three bullets stagger in (60ms each)
+5. Right panel slides in from right (350ms)
+6. Sign-in button pulses gently every 4s to draw attention
+
+OAUTH SCOPE REQUEST (shown as a visual checklist before Google prompt):
+· Gmail Read Access — "To fetch your emails and assignments"
+· Classroom Access  — "To read your coursework and announcements"
+· Drive Access      — "To download attached files"
+Each item has an animated checkmark appearing in sequence.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PAGE 02 — THE COMMAND CENTER (Main Dashboard)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONCEPT: "Everything at a glance — nothing missed"
+
+LAYOUT: Fixed left sidebar + main content area + right context panel
+
+LEFT SIDEBAR (240px, fixed):
+· Miro logo at top
+· User avatar (Firebase photo) + name + "Connected" green dot
+· Navigation links with icons:
+    – Dashboard (home icon)
+    – Emails (mail icon + unread badge)
+    – Classroom (graduation cap icon)
+    – Generated Files (file-text icon)
+    – Settings (gear icon)
+· At bottom: "Sync Now" button — triggers manual data fetch
+  On click: button shows pulsing amber animation + "Syncing..." text
+
+TOP HEADER:
+· Date + greeting: "Good morning, [Name]. 3 new tasks processed."
+· CMD+K search bar (shadcn/ui Command) — searches all emails, files, tasks
+· Notification bell — shows unread count
+
+MAIN CONTENT — STAT CARDS ROW (4 cards):
+Each card uses AnimateUI counter animation on mount.
+1. "Emails Fetched Today"    — number counter · mail icon
+2. "Files Processed"        — number counter · file icon
+3. "Assignments Generated"  — number counter · pen icon
+4. "Study Materials Ready"  — number counter · book icon
+Cards: dark surface, amber accent on icon, subtle border.
+
+MAIN CONTENT — ACTIVITY FEED:
+Title: "Recent Activity"
+Scrollable list of processing events. Each row:
+· Left: colored dot (amber=processing, green=done, red=error)
+· Center: email subject + classification badge
+· Right: time ago + action button ("View Output")
+Rows animate in with stagger on page load.
+Empty state: Unsplash image (query="empty desk") + "No activity yet. Sync to start."
+
+MAIN CONTENT — QUICK STATS CHART:
+Weekly bar chart (using Recharts) — emails processed per day.
+Bars animate up on mount. Hover tooltip shows breakdown by type.
+
+RIGHT PANEL (300px, collapsible):
+Title: "Active Tasks"
+Shows currently processing tasks as a live list.
+Each task card:
+· File name + type badge
+· shadcn/ui Progress bar (animates as steps complete)
+· Current step label: "Extracting text..." / "Generating content..." / "Done"
+Powered by Firestore real-time listener — updates without refresh.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PAGE 03 — THE INBOX (Emails View)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONCEPT: "Your Gmail, reimagined for academics"
+
+LAYOUT: List + Detail (master-detail pattern)
+
+LEFT: Scrollable email list (all fetched academic emails)
+Each email item:
+· Sender avatar (initials if no photo) · Subject line · Date
+· Classification badge: color-coded pill
+    – ASSIGNMENT  → amber badge
+    – NOTES       → indigo badge
+    – ANNOUNCEMENT → teal badge
+    – UNCLASSIFIED → gray badge
+· Attachment indicator: paperclip icon + count
+· "Processed" green dot if Miro already handled it
+· Hover: slight background lift + border glow
+
+RIGHT: Email detail panel (appears on click, slides in)
+· Full email subject + sender info
+· Email body rendered as clean formatted text
+· Attachment section: list of detected files with type icons
+  Each attachment has a "Process with Miro" button
+  On click: button transforms to animated progress indicator
+· "AI Classification" section: shows what Miro decided this email is
+· "Generated Output" section: download button for produced file (if done)
+
+FILTER BAR (above list):
+· Tabs: All · Assignments · Notes · Announcements · Unread
+· Search within emails (local filter)
+· Date range picker
+· "Sort by" dropdown: Date / Priority / Status
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PAGE 04 — THE CLASSROOM HUB
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONCEPT: "All your courses, one intelligent view"
+
+LAYOUT: Course grid at top → selected course detail below
+
+COURSE GRID:
+Each course shown as a card with:
+· Unsplash background image fetched dynamically by subject name
+  (e.g., "Mathematics" → query="mathematics abstract", "History" → query="history books")
+· Gradient overlay on image
+· Course name (large, white text on top)
+· Teacher name + section
+· Pending items badge (red if any due soon)
+· Hover: image zooms slightly (scale 1.05, 300ms) — AnimateUI zoom effect
+
+COURSE DETAIL (expands below on click, smooth accordion animation):
+Three tabs: Coursework · Announcements · Materials
+· Coursework tab: list of assignments with due dates, status, process button
+· Announcements tab: list of posts, each with "Summarize" button
+· Materials tab: list of Drive files with type icons, each with "Extract & Process" button
+
+Due Date Alert Strip: red banner at top of any course with overdue items.
+AnimateUI shake animation on the banner to draw attention on mount.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PAGE 05 — THE VAULT (Generated Files)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONCEPT: "Every output Miro ever created — yours forever"
+
+LAYOUT: Masonry-style card grid
+
+Each output card:
+· File type icon (large, top of card)
+· File name (truncated if long)
+· Source: which email / classroom post it came from
+· Type badge: ASSIGNMENT / SUMMARY / Q&A / EXPERIMENT
+· Generated date + time
+· File size
+· Two buttons: "Preview" (opens Dialog modal) + "Download" (Firebase Storage URL)
+
+PREVIEW MODAL (shadcn/ui Dialog):
+· Slide-up animation on open
+· Blurred backdrop
+· Document preview: rendered markdown or DOCX text
+· Download button inside modal
+· Share button: copies Firebase signed URL to clipboard
+
+FILTER + SORT BAR:
+· Output type filter (all / assignments / summaries / Q&A)
+· Date range
+· Search by name or source
+
+EMPTY STATE:
+Animated Unsplash image (query="blank notebook") + 
+"Nothing here yet. Process an email or attachment to see outputs."
+Button: "Go to Inbox" → routes to emails page
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PAGE 06 — THE PROCESSOR (Task Detail View)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONCEPT: "Watch Miro think in real time"
+
+Triggered when user clicks "Process" on any file/email.
+Opens as a full-page modal or dedicated route.
+
+LAYOUT: Centered pipeline visualization
+
+PIPELINE VISUALIZER (built with AnimateUI + Tailwind):
+Vertical timeline of steps. Each step is a card that lights up as it completes:
+
+  ● STEP 1: FETCH                    [status indicator]
+    "Downloading attachment from Gmail/Drive"
+
+  ● STEP 2: DETECT TYPE              [status indicator]
+    "Checking if PDF is text-based or scanned"
+
+  ● STEP 3: EXTRACT                  [status indicator]
+    "Extracting text with PyMuPDF / OCR.space"
+
+  ● STEP 4: CLASSIFY                 [status indicator]
+    "Gemini AI reading content and classifying"
+
+  ● STEP 5: GENERATE                 [status indicator]
+    "Generating assignment / summary / Q&A"
+
+  ● STEP 6: WRITE FILE               [status indicator]
+    "Building DOCX and PDF output"
+
+  ● STEP 7: NOTIFY                   [status indicator]
+    "Sending email with download link"
+
+Status indicators:
+· Pending  : gray hollow circle
+· Active   : pulsing amber filled circle + spinner around it
+· Done     : green filled circle + checkmark (AnimateUI pop animation)
+· Error    : red circle + X icon + retry button appears
+
+Step cards: on active, border glows amber. On done, border turns green.
+Powered by Firestore real-time listener on task document.
+
+BOTTOM SECTION:
+· "Extracted Text Preview" accordion (collapses by default)
+  Shows first 500 chars of extracted content
+· "AI Classification Result" badge strip
+· "Cancel Processing" red button (only visible while active)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PAGE 07 — SETTINGS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Sections (tabs):
+· Profile        : name, email, photo (from Firebase), sign-out button
+· Preferences    : auto-sync toggle, sync frequency (hourly/daily), notification email
+· Connected APIs : shows green connected dot for each API
+· Output Format  : default output (DOCX / PDF / both)
+· Privacy        : data retention settings, delete all processed data button
+
+
+================================================================================
+  PART 3 — FRONTEND TECHNICAL IMPLEMENTATION PLAN
+================================================================================
+
+PROJECT STRUCTURE
+─────────────────
+/src
+  /components
+    /ui            → all shadcn/ui base components
+    /animated      → AnimateUI wrapped versions of shadcn components
+    /layout        → Sidebar, Header, PageWrapper, RightPanel
+    /features      → feature-specific composite components
+  /pages           → one file per route/page
+  /hooks           → useFirestore, useGeminiTask, useUnsplash, useAuth
+  /lib             → firebase config, api clients, utility functions
+  /stores          → Zustand global state (auth, tasks, ui state)
+  /types           → TypeScript interfaces for all data shapes
+
+ROUTING (React Router v6):
+· /                → Landing / Login (redirect to /dashboard if authed)
+· /dashboard       → Command Center
+· /emails          → Inbox View
+· /classroom       → Classroom Hub
+· /files           → The Vault
+· /process/:taskId → Processor View
+· /settings        → Settings
+All routes wrapped in AuthGuard component that checks Firebase auth state.
+
+STATE MANAGEMENT (Zustand):
+· authStore   : user object, OAuth tokens, loading state
+· taskStore   : active tasks, task history
+· uiStore     : sidebar open/close, active filters, search query
+
+FIREBASE INTEGRATION ON FRONTEND:
+· Firebase SDK initialized in /lib/firebase.ts
+· Google Sign-In with custom scopes added at auth time
+· After sign-in: extract access_token from credential
+· Store access_token in Zustand (not localStorage for security)
+· Send access_token to backend as Authorization header on all requests
+· Firestore: real-time listeners on /tasks/{userId} collection
+· Storage: use getDownloadURL() to get signed links for generated files
+
+UNSPLASH INTEGRATION:
+· Custom hook: useUnsplash(query) → returns image URL
+· Caches results in a Map to avoid duplicate requests
+· Always fetches with orientation=landscape and w=1200 for quality
+· Shows shimmer skeleton while image loads, then crossfade reveal
+
+ANIMATEUI INTEGRATION:
+· Install AnimateUI alongside Framer Motion (its dependency)
+· Create /components/animated/ wrappers:
+    – AnimatedCard  : fade-up entrance on mount
+    – AnimatedList  : staggered children entrance
+    – AnimatedBadge : pop-in on mount
+    – AnimatedCounter : number count-up animation
+    – AnimatedProgress : smooth progress bar with glow
+· All page-level components wrapped in AnimatedPage (crossfade transition)
+· Use AnimateUI's useInView hook for scroll-triggered animations
+
+API COMMUNICATION:
+· All backend calls through a central apiClient (axios instance)
+· Base URL set from environment variable VITE_BACKEND_URL
+· Auth header injected via axios interceptor from Zustand authStore
+· Error handling: 401 → re-prompt Firebase sign-in, 500 → toast error
+
+
+================================================================================
+  PART 4 — BACKEND ARCHITECTURE PLAN
+================================================================================
+
+BACKEND PHILOSOPHY
+──────────────────
+The backend is a headless AI pipeline engine. It receives tasks from the
+frontend, executes multi-step agent workflows, writes progress to Firestore
+in real time, and stores results in Firebase Storage. It never "holds"
+sensitive email content longer than the current task needs.
+
+PROJECT STRUCTURE
+─────────────────
+/backend
+  /api
+    /routes      → FastAPI route files per domain
+    /middleware  → Firebase token verification, CORS, rate limiting
+  /agents
+    /orchestrator → LangGraph graph definition and state machine
+    /nodes        → individual agent node functions (one per pipeline step)
+  /services
+    /gmail        → Gmail API client — fetch, read, download attachments
+    /classroom    → Classroom API client — courses, coursework, materials
+    /drive        → Drive API client — file download by fileId
+    /extractor    → document text extraction logic per file type
+    /ocr          → OCR.space API client wrapper
+    /gemini       → Gemini API client — classification + generation prompts
+    /rag          → ChromaDB setup, chunk storage, retrieval logic
+    /writer       → DOCX and PDF output generation
+    /storage      → Firebase Storage upload and signed URL generation
+    /notifier     → Gmail API send — notification email
+  /workers
+    /celery_app   → Celery + Redis configuration
+    /tasks        → background task definitions (one per major workflow)
+  /models         → Pydantic data models for all requests and DB documents
+  /config         → environment variable loading, API key management
+  main.py         → FastAPI app init, route registration, startup events
+
+
+ENVIRONMENT VARIABLES NEEDED
+─────────────────────────────
+FIREBASE_SERVICE_ACCOUNT_JSON  → Firebase Admin SDK credentials
+GEMINI_API_KEY                 → Google Gemini API
+OCR_SPACE_API_KEY              → OCR.space free API key
+REDIS_URL                      → Redis Cloud connection URL
+UNSPLASH_ACCESS_KEY            → Unsplash API (frontend uses this)
+BACKEND_URL                    → deployed backend URL
+VITE_FIREBASE_CONFIG           → Firebase web config (frontend)
+
+
+================================================================================
+  PART 5 — BACKEND FEATURES (WORKFLOW & INSTRUCTIONS)
+================================================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BACKEND FEATURE 01 — THE GATEKEEPER
+Firebase Authentication Middleware
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONCEPT: "Every request must prove who it is before anything happens"
+
+PURPOSE:
+Verify every incoming API request is from a legitimate authenticated user.
+Extract the OAuth2 access token so downstream services can call Google APIs
+on behalf of the user.
+
+WORKFLOW:
+1. Frontend sends request with header: Authorization: Bearer {firebase_id_token}
+2. Backend middleware intercepts every request before it hits any route
+3. Firebase Admin SDK verifies the ID token — rejects if expired or invalid
+4. Extracts uid and email from decoded token
+5. Looks up the user's stored OAuth2 access_token from Firestore
+   (stored there at first sign-in by a dedicated /auth/store-token endpoint)
+6. Attaches { uid, email, oauth_access_token } to request state
+7. All downstream route handlers read from request.state — never from client
+
+SECURITY RULES:
+· ID token expires every 1 hour — Firebase handles silent refresh on frontend
+· OAuth2 access token also expires — check expiry before using, refresh if needed
+· Never log or print access_token in any log output
+· Rate limit: max 100 requests per user per minute (FastAPI middleware)
+
+FIRESTORE SCHEMA for user auth data:
+Collection: /users/{uid}
+Document fields:
+  · email                 : string
+  · display_name          : string
+  · photo_url             : string
+  · oauth_access_token    : string (encrypted at rest)
+  · oauth_refresh_token   : string (encrypted at rest)
+  · token_expiry          : timestamp
+  · created_at            : timestamp
+  · last_sync             : timestamp
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BACKEND FEATURE 02 — THE HARVESTER
+Gmail + Classroom Data Fetch Service
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONCEPT: "Sweep every platform clean — leave nothing behind"
+
+GMAIL FETCH WORKFLOW:
+1. Use user's OAuth2 access token to initialize Gmail API client
+2. Call users.messages.list with query filter:
+   · Filter for academic keywords: assignment, homework, submission, deadline,
+     notes, lecture, exam, test, project, due, class, course, grade
+   · Limit to past 30 days (configurable)
+   · Max 50 emails per sync (configurable)
+3. For each message ID returned, call users.messages.get to get full message
+4. Parse message payload:
+   · Extract subject, sender, date, body (handle both text/plain and text/html)
+   · Detect parts where mimeType is NOT text/* — these are attachments
+5. For each attachment detected:
+   · Record: filename, mimeType, attachmentId, size
+   · If size < 10MB: immediately download via users.messages.attachments.get
+   · Attachment data comes as base64 — decode to raw bytes
+   · Save bytes temporarily in /tmp/ for processing
+6. Store each email record in Firestore:
+   Collection: /users/{uid}/emails/{message_id}
+   Fields: subject, sender, date, body_text, attachment_list, status="fetched"
+
+CLASSROOM FETCH WORKFLOW:
+1. Initialize Classroom API client with user's OAuth2 token
+2. Call courses.list → get all active courses for the student
+3. For each course:
+   a. Call courses.courseWork.list → get all assignments and tasks
+   b. Call courses.announcements.list → get all teacher announcements
+   c. Call courses.courseWorkMaterials.list → get all study materials
+4. For each coursework/material item that has Drive file attachments:
+   · Extract driveFile.id from the materials list
+   · Call Drive API files.get(fileId, alt=media) to download the file
+   · Save raw bytes to /tmp/ for processing
+5. Store in Firestore:
+   Collection: /users/{uid}/classroom/{courseId}/items/{itemId}
+   Fields: title, type, due_date, attachments, description, status="fetched"
+
+SYNC TRIGGER MODES:
+· Manual  : User clicks "Sync Now" button in dashboard
+· Webhook : Gmail Push Notification via PubSub (advanced, Phase 3)
+· Polling : Celery periodic task runs every hour (simpler, Phase 1)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BACKEND FEATURE 03 — THE DETECTIVE
+Content Classification Service (Gemini)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONCEPT: "Read between the lines — know what matters"
+
+PURPOSE:
+Before processing any email or attachment, Miro must understand what it is.
+The Classifier reads the content and assigns a label that determines the
+entire downstream pipeline path.
+
+INPUT TO CLASSIFIER:
+· Email subject line
+· Email body (first 2000 chars)
+· List of attachment filenames and types
+· Source: Gmail or Classroom
+· Course name (if from Classroom)
+
+GEMINI PROMPT STRATEGY:
+Send structured prompt to Gemini 2.0 Flash asking it to return pure JSON.
+The JSON schema to request:
+  {
+    "type"         : "ASSIGNMENT" | "NOTES" | "ANNOUNCEMENT" | "EXPERIMENT" | "UNCLASSIFIED",
+    "subject_area" : "Mathematics" | "Physics" | "Computer Science" | ... | "Unknown",
+    "priority"     : "HIGH" | "MEDIUM" | "LOW",
+    "has_deadline" : true | false,
+    "deadline_text": "string or null — extracted deadline if found in text",
+    "action_required": true | false,
+    "summary_one_line": "one sentence describing what this item is"
+  }
+
+CLASSIFICATION RULES:
+· ASSIGNMENT   : has submission deadline, requires student response/output
+· NOTES        : lecture slides, reading material, study guides, reference docs
+· ANNOUNCEMENT : informational, no action required, from teacher
+· EXPERIMENT   : lab report template, experiment instructions, practical task
+· UNCLASSIFIED : cannot confidently assign any category
+
+ROUTING AFTER CLASSIFICATION:
+· ASSIGNMENT   → Extractor → RAG → Assignment Generator → Writer → Notifier
+· NOTES        → Extractor → RAG → Summarizer + Q&A Generator → Writer → Notifier
+· ANNOUNCEMENT → Store in Firestore only → no file output generated
+· EXPERIMENT   → Extractor → RAG → Experiment Report Generator → Writer → Notifier
+· UNCLASSIFIED → Flag for manual review in dashboard
+
+UPDATE FIRESTORE:
+Update the email/item document with all classification fields.
+Update status field from "fetched" to "classified".
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BACKEND FEATURE 04 — THE DISSECTOR
+Document Text Extraction Service
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONCEPT: "Tear open every file — read what's inside"
+
+PURPOSE:
+Convert raw file bytes (PDF/DOCX/PPTX/images) into clean structured text
+that the AI can process. Use the fastest and most accurate method per file type.
+Fall back gracefully to OCR.space for scanned/image content.
+
+PDF EXTRACTION WORKFLOW:
+1. Open file with PyMuPDF
+2. Extract text page by page
+3. Check text quality: if total chars across all pages < 100:
+   file is likely scanned or image-only → go to OCR fallback
+4. If text is good: clean it (remove header/footer artifacts, extra whitespace)
+5. Return: { pages: [{page_num, text, word_count}], total_text, page_count }
+
+OCR.space FALLBACK WORKFLOW (for scanned PDFs or image files):
+1. Triggered when PyMuPDF yields insufficient text
+2. Convert PDF pages to JPEG images at 200 DPI using PyMuPDF's rendering
+3. Send image bytes to OCR.space API:
+   · Endpoint: https://api.ocr.space/parse/image
+   · Parameters: language=eng, isTable=false, scale=true, OCREngine=2
+   · Send as multipart form — base64 or direct file upload
+4. Parse response: extract ParsedText from each page result
+5. Concatenate all page results into full document text
+6. Return same format as direct extraction above
+
+DOCX EXTRACTION WORKFLOW:
+1. Open with python-docx
+2. Extract all paragraphs in document order
+3. Detect and extract tables: rows and cells as structured data
+4. Extract heading levels separately (useful for summarization structure)
+5. Detect any embedded images (note their presence but skip content)
+6. Return: { paragraphs, headings, tables, total_text }
+
+PPTX EXTRACTION WORKFLOW:
+1. Open with python-pptx
+2. Iterate all slides in order
+3. Per slide: extract all text frames and text boxes
+4. Extract speaker notes for each slide (often contains the lecture explanation)
+5. Detect slide layout (title slide, content slide, blank)
+6. Return: { slides: [{slide_num, title, body_text, notes}], total_text }
+
+POST-EXTRACTION:
+· Store extracted text in Firestore document (compressed if large)
+· Chunk text into segments of ~500 tokens each for RAG
+· Embed each chunk using sentence-transformers (all-MiniLM-L6-v2)
+· Store embeddings + chunks in ChromaDB under the user's namespace
+· Update document status: "extracted"
+
+TEXT QUALITY CHECKS:
+· Minimum 100 chars to be considered successfully extracted
+· Remove repeated whitespace, control characters, null bytes
+· Detect language (if non-English, flag it — OCR.space supports 27 languages)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BACKEND FEATURE 05 — THE FORGE
+AI Content Generation Engine (Gemini + RAG)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONCEPT: "Transform raw knowledge into crafted academic output"
+
+PURPOSE:
+The heart of Miro. Takes extracted text + classification type and produces
+a structured, high-quality academic document using Gemini 2.0 Flash + RAG.
+
+RAG RETRIEVAL STEP (before every generation call):
+1. Take the email subject or document title as the query
+2. Convert query to embedding using sentence-transformers
+3. Query ChromaDB for top 5 most semantically similar chunks
+4. Append retrieved chunks to the generation prompt as context
+5. This ensures Gemini generates content grounded in the actual document
+
+GENERATION PATH A — ASSIGNMENT GENERATOR:
+Triggered when: type = ASSIGNMENT or EXPERIMENT
+
+Input prompt components:
+· System instruction: you are an academic writing assistant for a student
+· Assignment instructions (full extracted text)
+· Retrieved context chunks from ChromaDB
+· Format requirements: generate a complete structured assignment document
+
+Gemini output structure to request:
+  Title, Introduction, Objectives, Methodology/Approach,
+  Main Body (multiple sections with headings), Conclusion,
+  References placeholder, Word count estimate
+
+Additional processing:
+· If deadline detected: add due date to document header
+· If subject area detected: use appropriate academic tone
+· Generate a separate one-page "key concepts" summary for the student
+
+GENERATION PATH B — NOTES PROCESSOR:
+Triggered when: type = NOTES
+
+Three separate Gemini calls (can run sequentially or parallel):
+
+Call 1 — Summarizer:
+· Input: full extracted text (up to 10,000 chars), top RAG chunks
+· Output: structured summary with sections matching original document structure
+· Length target: 20% of original length
+· Format: heading → paragraph → key points list per section
+
+Call 2 — Q&A Generator:
+· Input: full extracted text
+· Output: 10–15 question-answer pairs
+· Mix of: factual recall, conceptual understanding, application questions
+· Format: Q: [question] / A: [detailed answer]
+
+Call 3 — Concept Explainer:
+· Input: key terms detected in extracted text
+· Output: simple plain-language explanation of each key concept
+· Format: term → 2–3 sentence explanation a student can understand
+
+All three outputs combined into one output document.
+
+GENERATION PATH C — EXPERIMENT REPORT GENERATOR:
+Triggered when: type = EXPERIMENT
+
+Gemini generates a structured lab report template filled with content:
+  Title, Aim, Hypothesis, Materials/Equipment, Procedure,
+  Observations (blank table structure for student to fill),
+  Results Analysis guidance, Conclusion template,
+  Safety Precautions if relevant
+
+GEMINI API CALL PARAMETERS:
+· Model      : gemini-2.0-flash (latest)
+· Temperature: 0.4 (balanced — creative but factual)
+· Max tokens : 4000 per call
+· Safety settings: block only HARM_BLOCK_THRESHOLD_UNSPECIFIED
+· Response format: instruct plain text with markdown formatting
+
+RATE LIMIT HANDLING:
+· Gemini free: 15 RPM (requests per minute)
+· If rate limit hit: exponential backoff — wait 4s, 8s, 16s then fail
+· Log rate limit events to Firestore for monitoring
+· Queue multiple tasks through Celery to avoid simultaneous calls
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BACKEND FEATURE 06 — THE SCRIBE
+Document Output Writer
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONCEPT: "Give the student something they can actually hand in"
+
+PURPOSE:
+Convert AI-generated text content into professionally formatted DOCX and PDF
+files ready for submission or study use.
+
+DOCX GENERATION WORKFLOW:
+1. Create new python-docx Document object
+2. Apply custom document styles:
+   · Normal: Calibri 12pt, 1.15 line spacing
+   · Heading 1: Calibri Light 18pt, dark blue color, spacing before/after
+   · Heading 2: Calibri 14pt, medium gray, spacing above
+   · Title: Calibri 24pt bold, centered
+   · Body text matches standard academic paper format
+3. Insert document content:
+   · Cover section: document title, student name placeholder, date, course name
+   · Parse AI output (markdown-like structure) into proper Word paragraphs
+   · Detect "##" headings → apply Heading styles
+   · Detect "**text**" → apply bold
+   · Detect bullet lists → Word list style
+   · Detect table markers → create Word table with borders
+4. Insert footer: page numbers (right-aligned) + "Generated by Miro" (left)
+5. Insert header: course name + document type
+6. Save as .docx file to /tmp/
+
+PDF GENERATION WORKFLOW:
+1. Build Jinja2 HTML template for the document type (assignment/notes/experiment)
+2. Inject AI-generated content into template variables
+3. Apply CSS styling:
+   · Professional A4 layout
+   · Academic font stack (Georgia for body, Helvetica for headings)
+   · Proper margins (2.5cm all sides)
+   · Subtle header/footer
+   · Color accents matching document type
+4. Render HTML to PDF using WeasyPrint
+5. Save as .pdf file to /tmp/
+
+FIREBASE STORAGE UPLOAD:
+1. Upload both .docx and .pdf to Firebase Storage
+   · Path: /outputs/{uid}/{task_id}/filename.docx
+   · Path: /outputs/{uid}/{task_id}/filename.pdf
+2. Get signed download URL for each file (valid for 7 days)
+3. Store URLs in Firestore task document
+4. Clean up /tmp/ files after upload succeeds
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BACKEND FEATURE 07 — THE HERALD
+Email Notification Service
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONCEPT: "Tell the student the moment their work is ready"
+
+WORKFLOW:
+1. Triggered at end of every successful pipeline completion
+2. Build HTML email using Jinja2 template:
+   Subject: "Miro: Your [Assignment / Study Material] is ready"
+   Body sections:
+     · Header with Miro logo text
+     · "Hi [Student Name], Miro has finished processing:"
+     · Source info card: original email subject, received date
+     · Output summary: what was generated (assignment / summary+Q&A / etc.)
+     · Download buttons: [Download DOCX] [Download PDF]
+       (Both link to Firebase Storage signed URLs)
+     · "This file will be available for download for 7 days."
+     · Footer: "Miro — Your academic assistant"
+3. Send via Gmail API users.messages.send:
+   · From: student's own Gmail (using their OAuth2 token)
+   · To: student's own email
+   · Content: base64 encoded RFC 2822 formatted message
+4. Store notification record in Firestore:
+   Collection: /users/{uid}/notifications/{notification_id}
+   Fields: sent_at, subject, task_id, delivery_status
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BACKEND FEATURE 08 — THE CONDUCTOR
+LangGraph Agent Orchestrator
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONCEPT: "The brain that connects all the parts in the right order"
+
+PURPOSE:
+LangGraph defines the entire processing pipeline as a state machine graph.
+Each node in the graph is one service function. Edges have conditions that
+determine which node runs next based on the current state.
+
+GRAPH STATE OBJECT (passed between all nodes):
+{
+  task_id, uid, source_type (gmail/classroom),
+  raw_content, attachment_path, attachment_type,
+  extracted_text, classification, rag_chunks,
+  generated_content, output_paths, notification_sent,
+  current_step, error, retry_count
+}
+
+GRAPH NODES:
+· fetch_data         → calls Gmail/Classroom/Drive services
+· classify_content   → calls Gemini classifier
+· extract_text       → calls extractor service (PyMuPDF or OCR.space)
+· store_chunks       → stores text chunks in ChromaDB
+· generate_content   → calls Gemini generator (routes by classification)
+· write_files        → calls writer service (DOCX + PDF)
+· upload_to_storage  → calls Firebase Storage uploader
+· send_notification  → calls Herald (Gmail send)
+· update_status      → writes final status to Firestore
+· handle_error       → logs error, updates Firestore, optionally retries
+
+GRAPH EDGES (conditional routing):
+· After classify: if ANNOUNCEMENT → skip to update_status (no file needed)
+· After extract: if text quality too low → handle_error (ask user to retry)
+· After generate: if content empty → handle_error
+· After any node: if error raised → handle_error
+
+TASK LIFECYCLE IN FIRESTORE:
+Status field updates as pipeline progresses:
+  QUEUED → FETCHING → CLASSIFYING → EXTRACTING → GENERATING → WRITING → UPLOADING → DONE
+  (or ERROR at any step)
+
+Frontend listens to this status field via Firestore onSnapshot → updates
+the pipeline visualizer in real time without polling.
+
+CELERY INTEGRATION:
+· LangGraph agent invocation wrapped in a Celery task
+· Celery worker picks up task from Redis queue
+· Multiple workers can process multiple tasks concurrently
+· Task timeout set to 10 minutes per task
+· Failed tasks retried up to 2 times with 30-second delay
+
+
+================================================================================
+  PART 6 — DATABASE SCHEMA (FIRESTORE)
+================================================================================
+
+/users/{uid}
+  · email, display_name, photo_url
+  · oauth_access_token, oauth_refresh_token, token_expiry
+  · preferences: { auto_sync, sync_frequency, output_format }
+
+/users/{uid}/emails/{message_id}
+  · subject, sender, date, body_text
+  · attachment_list: [{filename, mime_type, attachment_id, downloaded}]
+  · status: fetched | classified | extracting | generating | done | error
+  · classification: {type, subject_area, priority, deadline_text, action_required}
+  · task_id: linked processing task
+
+/users/{uid}/classroom/{course_id}
+  · course_name, teacher, section, enrollment_code
+
+/users/{uid}/classroom/{course_id}/items/{item_id}
+  · title, type (coursework/announcement/material)
+  · description, due_date, attachments
+  · status, task_id, classification
+
+/users/{uid}/tasks/{task_id}
+  · status (QUEUED through DONE or ERROR)
+  · source_type, source_id
+  · current_step, started_at, completed_at
+  · output_docx_url, output_pdf_url
+  · error_message (if error)
+  · retry_count
+
+/users/{uid}/outputs/{output_id}
+  · task_id, generated_at
+  · type (ASSIGNMENT/SUMMARY/QA/EXPERIMENT)
+  · title, source_subject
+  · docx_url, pdf_url
+  · file_size_bytes
+  · expires_at (7 days from generation)
+
+/users/{uid}/notifications/{notification_id}
+  · sent_at, subject, task_id, delivery_status
+
+
+================================================================================
+  PART 7 — API ENDPOINTS (FastAPI Routes)
+================================================================================
+
+AUTH
+  POST /auth/store-token    → receive and store OAuth2 tokens after sign-in
+  POST /auth/refresh-token  → refresh OAuth2 token using refresh token
+  GET  /auth/me             → return current user profile from Firestore
+
+SYNC
+  POST /sync/gmail          → trigger Gmail fetch for authenticated user
+  POST /sync/classroom      → trigger Classroom fetch for authenticated user
+  POST /sync/all            → trigger both in parallel
+
+EMAIL
+  GET  /emails              → list all fetched emails for user
+  GET  /emails/{id}         → get single email detail
+  POST /emails/{id}/process → trigger processing pipeline for this email
+
+CLASSROOM
+  GET  /classroom/courses           → list all courses
+  GET  /classroom/{courseId}/items  → list all items for a course
+  POST /classroom/items/{id}/process → trigger pipeline for this item
+
+TASKS
+  GET  /tasks               → list all tasks for user (with status)
+  GET  /tasks/{taskId}      → get single task detail and progress
+  POST /tasks/{taskId}/cancel → cancel active task
+
+OUTPUTS
+  GET  /outputs             → list all generated output files
+  GET  /outputs/{id}        → get single output detail + download URLs
+
+WEBHOOKS
+  POST /webhook/gmail-push  → receive Gmail PubSub push notification (Phase 3)
+
+
+================================================================================
+  PART 8 — PHASE-BY-PHASE BUILD PLAN
+================================================================================
+
+PHASE 1 — WEEKS 1–2: FOUNDATION
+Goal: User can sign in, fetch emails, see them in dashboard
+
+Backend tasks:
+· Set up FastAPI project structure
+· Firebase Admin SDK integration + token verification middleware
+· Gmail service: list and fetch emails with attachment metadata
+· Classroom service: list courses and coursework
+· Firestore schema setup and write operations
+· /auth endpoints + /sync endpoints + /emails GET endpoint
+
+Frontend tasks:
+· React + Vite project setup with Tailwind + shadcn/ui + AnimateUI installed
+· Firebase SDK integration
+· Landing/Login page with Google Sign-In
+· Dashboard skeleton with sidebar + header
+· Emails page: list view with classification badge placeholders
+· Firestore real-time listener hook (useFirestore)
+· Unsplash hook for background images
+
+SUCCESS CRITERIA:
+User logs in → app fetches last 30 academic emails → displays them in list
+
+──────────────────────────────────────────
+
+PHASE 2 — WEEKS 3–4: INTELLIGENCE
+Goal: Every fetched item is classified and attachments are extracted
+
+Backend tasks:
+· Gemini API integration (google-generativeai library)
+· Classifier service with JSON prompt and response parsing
+· PyMuPDF extractor for text PDFs
+· OCR.space API client for scanned PDFs
+· python-docx extractor + python-pptx extractor
+· ChromaDB setup + sentence-transformers embedding pipeline
+· LangGraph agent graph definition with classify + extract nodes
+· Celery + Redis setup for background processing
+· Firestore status updates from agent nodes
+
+Frontend tasks:
+· Classification badge display on email and classroom cards
+· Task Processor page (pipeline visualizer with Firestore listener)
+· "Process" buttons wired to POST /emails/{id}/process
+· Skeleton loading states on all data-fetched components
+· Toast notifications on task completion/error
+
+SUCCESS CRITERIA:
+User clicks Process on an email → sees pipeline steps animate live →
+email marked as classified + text extracted
+
+──────────────────────────────────────────
+
+PHASE 3 — WEEKS 5–6: GENERATION
+Goal: Miro generates complete assignment and study material files
+
+Backend tasks:
+· Gemini generation service (Assignment / Notes / Experiment paths)
+· RAG retrieval integrated into generation prompts
+· python-docx writer with styled templates
+· WeasyPrint + Jinja2 PDF generator
+· Firebase Storage upload + signed URL generation
+· Gmail API send for notification emails
+· Complete end-to-end LangGraph graph with all nodes connected
+· Writer and Notifier nodes added to agent
+
+Frontend tasks:
+· The Vault (outputs) page with download buttons
+· Preview modal (shadcn/ui Dialog) for generated file content
+· Notification toast + dashboard stat counter updates on completion
+· AnimateUI confetti on first successful generation
+· Course cards with Unsplash subject images
+
+SUCCESS CRITERIA:
+Email with PDF attachment processed → DOCX + PDF generated →
+stored in Firebase → notification email received with download links
+
+──────────────────────────────────────────
+
+PHASE 4 — WEEKS 7–8: POLISH + DEPLOYMENT
+Goal: Production-ready, deployed, tested end-to-end
+
+Backend tasks:
+· Error handling: all nodes handle and log exceptions gracefully
+· Retry logic: Celery retry on transient failures
+· Rate limit handling for Gemini API (exponential backoff)
+· OCR.space quota monitoring + warning at 80% usage
+· API endpoint security review
+· Deploy to Railway: set all environment variables
+· Test full pipeline with 3+ real student accounts
+
+Frontend tasks:
+· All AnimateUI animations tuned and tested
+· All empty states with Unsplash images
+· Command palette (CMD+K) global search
+· Settings page: preferences + connected status
+· Responsive design check (works on 1280px+ screens)
+· Deploy to Firebase Hosting: connect to Railway backend URL
+· End-to-end test: login → sync → process → download → notify
+
+SUCCESS CRITERIA:
+Full demo: sign in → sync → email classified → attachment extracted →
+assignment generated → downloaded → notification received in 3 minutes or less
+
+
+================================================================================
+  PART 9 — PERFORMANCE AND LIMITS REFERENCE
+================================================================================
+
+SERVICE               FREE LIMIT                  MIRO STRATEGY
+───────────────────────────────────────────────────────────────────────────────
+Firebase Auth         10,000 auth/month           More than enough for dev
+Firestore             50K reads · 20K writes/day  Minimize reads via caching
+Firebase Storage      5GB · 1GB/day download      Delete outputs after 7 days
+Gmail API             1 billion units/day         Unlimited for practical use
+Classroom API         Unlimited (student accounts) No concern
+Drive API             10,000 req/day per project  Well within student use
+Gemini 2.0 Flash      15 RPM · 1M tokens/day      Queue tasks via Celery
+OCR.space             25,000 req/month            Only for scanned docs (rare)
+Unsplash API          50 req/hour (dev) · 5K/hour (prod after approval) Cache all URLs
+ChromaDB              Unlimited (local)           No concern
+Redis Cloud (free)    30MB storage                Task queue IDs only (tiny)
+Railway (free)        500 hours/month             Sufficient for dev/demo
+sentence-transformers Unlimited (runs locally)    No concern
+
+
+================================================================================
+  PART 10 — NAMING CONVENTIONS & CODING STANDARDS
+================================================================================
+
+PYTHON (BACKEND):
+· snake_case for all variables, functions, files, modules
+· PascalCase for Pydantic models and class definitions
+· Constants in SCREAMING_SNAKE_CASE
+· All Gemini prompt templates in /services/gemini/prompts.py as string constants
+· All API keys accessed only via os.getenv() — never hardcoded
+· Every service function returns a typed Pydantic model, never raw dicts
+
+TYPESCRIPT (FRONTEND):
+· camelCase for variables and functions
+· PascalCase for React components and TypeScript interfaces
+· All Firestore field names match exactly with backend Pydantic model field names
+· All API calls centralized in /lib/api.ts functions — no direct fetch() in components
+· Custom hooks prefixed with "use" — useAuth, useTask, useUnsplash
+· All pages in /pages/ named as: DashboardPage, EmailsPage, etc.
+
+GIT BRANCH STRATEGY:
+· main        → production-ready code only
+· develop      → integration branch
+· feature/*    → one branch per feature (feature/gmail-fetch, feature/gemini-classify)
+· fix/*        → bug fixes
+
+
+================================================================================
+  END OF MIRO COMPREHENSIVE IMPLEMENTATION PLAN
+  Version 1.0 — Updated Tech Stack: Firebase + Gemini API + OCR.space
+================================================================================

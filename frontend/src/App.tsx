@@ -15,15 +15,18 @@ import { useAuth } from './hooks/useAuth';
 // Auth Guard Wrapper
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { isAuthenticated, isLoading } = useAuthStore();
-  
-  if (isLoading) {
+
+  // Show spinner ONLY during the very first cold-load (no persisted user, waiting
+  // for Firebase). If we have a persisted user (isAuthenticated=true), skip the
+  // spinner — Firebase re-validates silently in the background.
+  if (isLoading && !isAuthenticated) {
     return (
       <div className="h-screen w-screen bg-background flex items-center justify-center">
         <div className="w-8 h-8 rounded-full border-2 border-amber border-t-transparent animate-spin" />
       </div>
     );
   }
-  
+
   return isAuthenticated ? children : <Navigate to="/" replace />;
 }
 

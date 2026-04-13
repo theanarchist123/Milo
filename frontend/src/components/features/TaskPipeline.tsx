@@ -1,3 +1,4 @@
+import React from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircle2, Circle, Loader2, XCircle, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -31,6 +32,13 @@ const CARD_CLASS: Record<StepStatus, string> = {
 };
 
 export function TaskPipeline({ steps, onRetry }: TaskPipelineProps) {
+  if (!steps || steps.length === 0) {
+    return (
+      <div className="text-center py-8 text-text-tertiary text-sm">
+        No pipeline steps to display.
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-0">
       {steps.map((step, i) => (

@@ -9,6 +9,8 @@ import { AnimatedPage, AnimatedList, AnimatedListItem } from '@/components/anima
 import { useUiStore } from '@/stores/uiStore';
 import { useApi } from '@/hooks/useApi';
 
+// Current day abbreviation for highlighting today's bar in the chart
+const TODAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()];
 // Custom tooltip for Recharts
 const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: { value: number | string }[]; label?: string }) => {
   if (active && payload && payload.length) {
@@ -76,13 +78,20 @@ export function DashboardPage() {
                 <button className="text-xs text-amber font-medium hover:underline">View All</button>
               </div>
               <div className="flex-1 overflow-y-auto p-2">
-                <AnimatedList stagger={0.05}>
-                  {activity?.map((item) => (
-                    <AnimatedListItem key={item.id}>
-                      <ActivityRow item={item} />
-                    </AnimatedListItem>
-                  ))}
-                </AnimatedList>
+                {activity && activity.length > 0 ? (
+                  <AnimatedList stagger={0.05}>
+                    {activity.map((item) => (
+                      <AnimatedListItem key={item.id}>
+                        <ActivityRow item={item} />
+                      </AnimatedListItem>
+                    ))}
+                  </AnimatedList>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-text-tertiary gap-3 py-12">
+                    <Mail size={32} className="opacity-20" />
+                    <p className="text-sm">No activity yet — click Sync Now to start</p>
+                  </div>
+                )}
               </div>
             </motion.div>
 
@@ -114,9 +123,9 @@ export function DashboardPage() {
                     <Tooltip cursor={{ fill: 'rgba(255,255,255,0.04)' }} content={<CustomTooltip />} />
                     <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                       {weeklyData?.map((entry, index) => (
-                        <Cell 
-                          key={`cell-${index}`} 
-                          fill={entry.day === 'Thu' ? '#F5C842' : 'rgba(99,102,241,0.6)'} 
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={entry.day === TODAY ? '#F5C842' : 'rgba(99,102,241,0.6)'}
                         />
                       ))}
                     </Bar>

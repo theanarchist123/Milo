@@ -6,12 +6,14 @@ interface UiStore {
   activeFilter: string;
   searchQuery: string;
   commandPaletteOpen: boolean;
+  lastSyncTimestamp: number;   // Bumped when Sync Now completes → triggers useApi refetch
   setSidebarOpen: (open: boolean) => void;
   setRightPanelOpen: (open: boolean) => void;
   setActiveFilter: (filter: string) => void;
   setSearchQuery: (query: string) => void;
   setCommandPaletteOpen: (open: boolean) => void;
   toggleSidebar: () => void;
+  requestRefetch: () => void;  // Call after sync to tell all useApi hooks to reload
 }
 
 export const useUiStore = create<UiStore>((set) => ({
@@ -20,6 +22,7 @@ export const useUiStore = create<UiStore>((set) => ({
   activeFilter: 'all',
   searchQuery: '',
   commandPaletteOpen: false,
+  lastSyncTimestamp: 0,
 
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setRightPanelOpen: (rightPanelOpen) => set({ rightPanelOpen }),
@@ -27,4 +30,5 @@ export const useUiStore = create<UiStore>((set) => ({
   setSearchQuery: (searchQuery) => set({ searchQuery }),
   setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  requestRefetch: () => set({ lastSyncTimestamp: Date.now() }),
 }));

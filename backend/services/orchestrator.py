@@ -1,30 +1,51 @@
-import time
-from sqlalchemy.orm import Session
+"""
+Orchestrator — coordinates the Gmail and Classroom sync pipelines.
+Called by FastAPI BackgroundTasks so it runs asynchronously after the request returns.
+"""
+import logging
 from database import SessionLocal
-from models import User, Task as DBTask
+from models import User
 
-def _run_pipeline_for_user(user_id: str, access_token: str):
+logger = logging.getLogger(__name__)
+
+
+def run_gmail_sync(user_id: str, access_token: str):
     """
-    Core orchestration function executed by FastAPI BackgroundTasks.
-    It builds a simple execution pipeline (soon to be LangGraph)
+    Runs the Gmail fetch pipeline for a user.
+    Fetches academic emails and saves them to SQLite.
     """
-    db = SessionLocal()
+    logger.info(f"[Orchestrator] Starting Gmail sync for user {user_id}")
     try:
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            return
-            
-        print(f"[{user.email}] 🕵️ Detective: Scanning for new emails/courses...")
-        # 1. HARVESTER: Call Gmail & Classroom APIS using access_token
-        # 2. DETECTIVE: Pass content to Gemini to categorize
-        # 3. DISSECTOR: Extract PDFs
-        # 4. FORGE: Gemini generates summary/assignment
-        
-        # Simulating work for demonstration
-        time.sleep(2)
-        print(f"[{user.email}] ✅ Sync complete. Next step: Hook up LangGraph nodes.")
-        
+        from services.gmail_service import fetch_emails_for_user
+        result = fetch_emails_for_user(user_id, access_token)
+        logger.info(f"[Orchestrator] Gmail sync complete: {result}")
     except Exception as e:
-        print(f"Pipeline error: {e}")
-    finally:
-        db.close()
+        logger.error(f"[Orchestrator] Gmail sync failed for {user_id}: {e}")
+
+
+def run_classroom_sync(user_id: str, access_token: str):
+    """
+    Runs the Google Classroom fetch pipeline for a user.
+    Fetches courses, coursework, materials, and announcements.
+    """
+    logger.info(f"[Orchestrator] Starting Classroom sync for user {user_id}")
+    try:
+        from services.classroom_service import fetch_classroom_for_user
+        result = fetch_classroom_for_user(user_id, access_token)
+        logger.info(f"[Orchestrator] Classroom sync complete: {result}")
+    except Exception as e:
+        logger.error(f"[Orchestrator] Classroom sync failed for {user_id}: {e}")
+
+
+def run_full_sync(user_id: str, access_token: str):
+    """
+    Runs both Gmail and Classroom syncs sequentially for a user.
+    Use this for a full manual refresh.
+    """
+    run_gmail_sync(user_id, access_token)
+    run_classroom_sync(user_id, access_token)
+
+
+# Kept for backward compat — old code references this name
+def _run_pipeline_for_user(user_id: str, access_token: str):
+    run_full_sync(user_id, access_token)

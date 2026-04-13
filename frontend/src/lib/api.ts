@@ -1,36 +1,18 @@
-import axios from 'axios';
-import { useAuthStore } from '@/stores/authStore';
+// Consolidated API client — uses the single authenticated apiClient instance
+// which automatically attaches Firebase ID tokens on every request.
+import { apiClient } from './apiClient';
 
-const BASE_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000';
-
-export const apiClient = axios.create({
-  baseURL: BASE_URL,
-  timeout: 30_000,
-});
-
-// Inject Firebase ID token into every request
-apiClient.interceptors.request.use((config) => {
-  // In production, get a fresh Firebase ID token here
-  // For now, no-op — token injection wired when auth is active
-  return config;
-});
-
-// Handle 401 → re-prompt sign-in
-apiClient.interceptors.response.use(
-  (res) => res,
-  (error) => {
-    if (error.response?.status === 401) {
-      useAuthStore.getState().logout();
-    }
-    return Promise.reject(error);
-  }
-);
+export { apiClient };
 
 // ─── Auth ────────────────────────────────────────────────
 export const api = {
   auth: {
-    storeToken: (payload: { accessToken: string; refreshToken: string; expiresIn: number }) =>
-      apiClient.post('/auth/store-token', payload),
+    storeToken: (payload: {
+      accessToken: string;
+      displayName?: string | null;
+      email?: string | null;
+      photoURL?: string | null;
+    }) => apiClient.post('/auth/store-token', payload),
     me: () => apiClient.get('/auth/me'),
   },
 

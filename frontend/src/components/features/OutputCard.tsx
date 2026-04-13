@@ -43,8 +43,8 @@ export function OutputCard({ output, onPreview, index }: OutputCardProps) {
       </div>
 
       {/* Title */}
-      <div>
-        <h3 className="text-sm font-semibold text-text-primary line-clamp-2 leading-snug">
+      <div className="flex-1 min-h-0 min-w-0">
+        <h3 className="text-sm font-semibold text-text-primary line-clamp-2 leading-snug break-words">
           {output.title}
         </h3>
         <p className="text-xs text-text-secondary mt-1 truncate">
@@ -59,11 +59,13 @@ export function OutputCard({ output, onPreview, index }: OutputCardProps) {
         <span>{formatFileSize(output.fileSizeBytes)}</span>
       </div>
 
-      {/* Expiry */}
-      <div className="flex items-center gap-1.5 text-xs text-text-tertiary">
-        <Clock size={11} />
-        <span>Expires {timeAgo(output.expiresAt)}</span>
-      </div>
+      {/* Expiry — only shown if the backend provides an expiry date */}
+      {output.expiresAt && (
+        <div className="flex items-center gap-1.5 text-xs text-text-tertiary">
+          <Clock size={11} />
+          <span>Expires {timeAgo(output.expiresAt)}</span>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex gap-2 pt-1 border-t border-white/[0.06] mt-auto">
@@ -75,8 +77,9 @@ export function OutputCard({ output, onPreview, index }: OutputCardProps) {
         </button>
         <a
           href={output.docxUrl}
-          className="btn btn-primary flex-1 text-xs py-2"
-          download
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-primary flex-1 text-xs py-2 text-center items-center justify-center inline-flex gap-1.5"
         >
           <Download size={13} /> Download
         </a>

@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, cast, Date
 from typing import List, Dict
+import datetime as dt
+import uuid
 
 from database import get_db
 from models import User, EmailRecord, Course, CourseItem, Task as DBTask, GeneratedOutput
@@ -36,6 +38,19 @@ def get_dashboard_stats(db: Session = Depends(get_db), current_user: User = Depe
             "timestamp": r.date.isoformat() if r.date else None
         })
 
+    # Build weekly volume — count emails fetched per day for the last 7 days
+    day_labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    today = dt.datetime.utcnow().date()
+    weekly = []
+    for i in range(6, -1, -1):  # 6 days ago → today
+        day = today - dt.timedelta(days=i)
+        count = db.query(EmailRecord).filter(
+            EmailRecord.owner_id == current_user.id,
+            cast(EmailRecord.date, Date) == day
+        ).count()
+        # Monday=0 in Python weekday(); day_labels[0]='Mon'
+        weekly.append({"day": day_labels[day.weekday()], "count": count})
+
     return {
         "stats": {
             "emailsFetchedToday": emails_fetched,
@@ -43,15 +58,7 @@ def get_dashboard_stats(db: Session = Depends(get_db), current_user: User = Depe
             "assignmentsGenerated": assignments,
             "studyMaterialsReady": materials
         },
-        "weekly": [
-            {"day": "Mon", "count": 0},
-            {"day": "Tue", "count": 0},
-            {"day": "Wed", "count": 0},
-            {"day": "Thu", "count": emails_fetched}, # simplified for now
-            {"day": "Fri", "count": 0},
-            {"day": "Sat", "count": 0},
-            {"day": "Sun", "count": 0},
-        ],
+        "weekly": weekly,
         "activity": activity,
         "active": [
             {
@@ -89,16 +96,22 @@ def get_emails(db: Session = Depends(get_db), current_user: User = Depends(get_c
 @router.get("/classroom/courses")
 def get_courses(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     courses = db.query(Course).filter(Course.owner_id == current_user.id).all()
-    return [
-        {
+    result = []
+    for c in courses:
+        pending = db.query(CourseItem).filter(
+            CourseItem.course_id == c.id,
+            CourseItem.type == 'COURSEWORK',
+            CourseItem.status.in_(['fetched', 'classified'])
+        ).count()
+        result.append({
             "id": c.id,
             "name": c.name,
             "teacher": c.teacher,
             "section": c.section,
             "subject": c.subject,
-            "pendingCount": 0
-        } for c in courses
-    ]
+            "pendingCount": pending
+        })
+    return result
 
 # ─── Vault (Outputs) ──────────────────────────────────────────────────
 
@@ -120,29 +133,372 @@ def get_vault_outputs(db: Session = Depends(get_db), current_user: User = Depend
         } for o in outputs
     ]
 
-# ─── Synchronization / Agent Trigger ─────────────────────────────────
+# ─── Tasks ───────────────────────────────────────────────────────
 
-from services.orchestrator import _run_pipeline_for_user
+@router.get("/tasks")
+def list_tasks(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    tasks = db.query(DBTask).filter(DBTask.owner_id == current_user.id).order_by(DBTask.started_at.desc()).limit(50).all()
+    return [
+        {
+            "id": t.id,
+            "status": t.status,
+            "sourceType": t.source_type,
+            "sourceSubject": t.source_subject,
+            "currentStep": t.current_step,
+            "startedAt": t.started_at.isoformat() if t.started_at else None,
+            "retryCount": 0,
+        } for t in tasks
+    ]
 
-def background_sync_job(user_id: str, google_token: str):
-    """
-    This is the background task that will run the LangGraph pipeline
-    """
-    _run_pipeline_for_user(user_id, google_token)
 
-@router.post("/sync")
-def trigger_sync(
-    background_tasks: BackgroundTasks, 
-    db: Session = Depends(get_db), 
+@router.get("/tasks/{task_id}")
+def get_task(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(DBTask).filter(DBTask.id == task_id, DBTask.owner_id == current_user.id).first()
+    if not task:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {
+        "id": task.id,
+        "status": task.status,
+        "sourceType": task.source_type,
+        "sourceSubject": task.source_subject,
+        "currentStep": task.current_step,
+        "startedAt": task.started_at.isoformat() if task.started_at else None,
+        "errorMessage": task.error_message,
+        "retryCount": 0,
+    }
+
+
+# ─── Synchronization ─────────────────────────────────────────────────
+
+from services.orchestrator import run_gmail_sync, run_classroom_sync
+from services.gmail_service import fetch_emails_for_user
+from services.classroom_service import fetch_classroom_for_user
+
+
+def _token_error_response(svc_name: str, err: Exception) -> dict:
+    """Convert a Google API error into a user-friendly message."""
+    msg = str(err)
+    if '401' in msg or 'invalid_grant' in msg or 'Token has been expired' in msg:
+        return {"error": "token_expired", "message": "Google token expired. Please sign out and sign in again to re-grant access."}
+    if '403' in msg:
+        return {"error": "permission_denied", "message": f"{svc_name}: Permission denied. Ensure the API is enabled in Google Cloud Console and the OAuth scope is granted."}
+    return {"error": "api_error", "message": msg[:200]}
+
+
+@router.post("/sync/gmail")
+def trigger_gmail_sync(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Synchronously fetch Gmail emails and return real stats."""
+    if not current_user.google_access_token:
+        return {"error": "no_token", "message": "No Google OAuth token. Sign out and sign in again."}
+    try:
+        result = fetch_emails_for_user(current_user.id, current_user.google_access_token)
+        return {"status": "ok", "gmail": result}
+    except Exception as e:
+        return {"status": "error", "gmail": _token_error_response("Gmail", e)}
+
+
+@router.post("/sync/classroom")
+def trigger_classroom_sync(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Synchronously fetch Classroom data and return real stats."""
+    if not current_user.google_access_token:
+        return {"error": "no_token", "message": "No Google OAuth token. Sign out and sign in again."}
+    try:
+        result = fetch_classroom_for_user(current_user.id, current_user.google_access_token)
+        return {"status": "ok", "classroom": result}
+    except Exception as e:
+        return {"status": "error", "classroom": _token_error_response("Classroom", e)}
+
+
+@router.post("/sync/all")
+def trigger_full_sync(
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Frontend calls this endpoint to trigger the AI to check for new emails/courses
-    and ingest them via LangGraph.
+    Synchronously run Gmail + Classroom sync in sequence.
+    Returns real stats: how many emails/courses were fetched, and any errors.
+    This is intentionally synchronous so the frontend receives actual results.
     """
     if not current_user.google_access_token:
-        # In a real app we'd redirect to OAuth consent here or trigger it from the frontend
-        return {"error": "Google OAuth token not found for user. Please re-authenticate."}
+        return {
+            "status": "error",
+            "error": "no_token",
+            "message": "No Google OAuth token found. Please sign out and sign in again to reconnect Google services."
+        }
 
-    background_tasks.add_task(background_sync_job, current_user.id, current_user.google_access_token)
-    return {"status": "Sync triggered successfully. Processing in the background."}
+    gmail_result: dict = {}
+    classroom_result: dict = {}
+
+    try:
+        gmail_result = fetch_emails_for_user(current_user.id, current_user.google_access_token)
+    except Exception as e:
+        gmail_result = _token_error_response("Gmail", e)
+
+    try:
+        classroom_result = fetch_classroom_for_user(current_user.id, current_user.google_access_token)
+    except Exception as e:
+        classroom_result = _token_error_response("Classroom", e)
+
+    has_error = ("error" in gmail_result) or ("error" in classroom_result)
+    return {
+        "status": "error" if has_error else "ok",
+        "gmail": gmail_result,
+        "classroom": classroom_result,
+    }
+
+
+# ─── Classroom Items ──────────────────────────────────────────────────
+
+@router.get("/classroom/{course_id}/items")
+def get_course_items(
+    course_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    items = db.query(CourseItem).filter(
+        CourseItem.course_id == course_id,
+        CourseItem.owner_id == current_user.id
+    ).all()
+    return [
+        {
+            "id": item.id,
+            "courseId": item.course_id,
+            "title": item.title,
+            "type": item.type,
+            "description": item.description or "",
+            "dueDate": item.due_date.isoformat() if item.due_date else None,
+            "attachments": [],
+            "status": item.status,
+        } for item in items
+    ]
+
+
+# ─── AI Processing Pipeline ──────────────────────────────────────────────────
+
+from services.gemini_service import classify_content, generate_output, determine_output_type
+from services.docx_generator import create_docx_from_markdown
+
+
+def _serialize_task(t):
+    """Convert a Task ORM object to a frontend-compatible dict."""
+    return {
+        "id": t.id,
+        "status": t.status,
+        "sourceType": t.source_type,
+        "sourceSubject": t.source_subject,
+        "currentStep": t.current_step,
+        "startedAt": t.started_at.isoformat() if t.started_at else None,
+        "errorMessage": getattr(t, 'error_message', None),
+        "retryCount": 0,
+    }
+
+
+@router.post("/process/email/{email_id}")
+def process_email(
+    email_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Process an email through the full Gemini AI pipeline:
+    1. Classify the email content
+    2. Generate an output (assignment solution / summary / Q&A)
+    3. Save the generated output to the database
+    Returns the task object with real-time status.
+    """
+    email = db.query(EmailRecord).filter(
+        EmailRecord.id == email_id,
+        EmailRecord.owner_id == current_user.id
+    ).first()
+    if not email:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    # Create task record
+    task = DBTask(
+        id=str(uuid.uuid4()),
+        owner_id=current_user.id,
+        source_id=email_id,
+        source_type="gmail",
+        source_subject=email.subject or "(No Subject)",
+        status="CLASSIFYING",
+        current_step="Classifying with Gemini AI",
+        started_at=dt.datetime.utcnow(),
+    )
+    db.add(task)
+    db.commit()
+
+    try:
+        # Step 1: Classify
+        task.status = "CLASSIFYING"
+        task.current_step = "Analyzing content with Gemini AI"
+        db.commit()
+
+        classification = classify_content(
+            subject=email.subject or "",
+            body=email.body_text or "",
+            sender=email.sender or "Unknown",
+        )
+        email.classification = classification
+        email.status = "classified"
+        db.commit()
+
+        # Step 2: Generate output
+        output_type = determine_output_type(classification, "email")
+        task.status = "GENERATING"
+        task.current_step = f"Generating {output_type.lower()} with Gemini AI"
+        db.commit()
+
+        generated = generate_output(
+            title=email.subject or "Email",
+            content=email.body_text or "",
+            output_type=output_type,
+        )
+
+        if "error" in generated:
+            task.status = "ERROR"
+            task.current_step = f"Generation failed: {generated['error'][:100]}"
+            db.commit()
+            return _serialize_task(task)
+
+        # Step 3: Save output
+        task.status = "WRITING"
+        task.current_step = "Saving generated document"
+        db.commit()
+
+        # Generate DOCX
+        file_path = create_docx_from_markdown(generated["title"], generated["text"])
+
+        output_record = GeneratedOutput(
+            id=str(uuid.uuid4()),
+            owner_id=current_user.id,
+            task_id=task.id,
+            type=generated["type"],
+            title=generated["title"],
+            preview_text=generated["text"][:5000],
+            file_path=file_path,
+            created_at=dt.datetime.utcnow(),
+        )
+        db.add(output_record)
+
+        # Mark done
+        task.status = "DONE"
+        task.current_step = "Complete"
+        email.status = "done"
+        db.commit()
+
+        return _serialize_task(task)
+
+    except Exception as e:
+        task.status = "ERROR"
+        task.current_step = f"Failed: {str(e)[:200]}"
+        db.commit()
+        return _serialize_task(task)
+
+
+@router.post("/process/classroom/{item_id}")
+def process_classroom_item(
+    item_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Process a classroom item (coursework/material/announcement) through Gemini AI.
+    """
+    item = db.query(CourseItem).filter(
+        CourseItem.id == item_id,
+        CourseItem.owner_id == current_user.id
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Classroom item not found")
+
+    # Determine output type from item type
+    type_map = {
+        "COURSEWORK": "ASSIGNMENT",
+        "MATERIAL": "SUMMARY",
+        "ANNOUNCEMENT": "NOTES",
+    }
+    output_type = type_map.get(item.type, "SUMMARY")
+
+    # Create task
+    task = DBTask(
+        id=str(uuid.uuid4()),
+        owner_id=current_user.id,
+        source_id=item_id,
+        source_type="classroom",
+        source_subject=item.title or "Classroom Item",
+        status="CLASSIFYING",
+        current_step="Analyzing classroom content",
+        started_at=dt.datetime.utcnow(),
+    )
+    db.add(task)
+    db.commit()
+
+    try:
+        # Step 1: Classify
+        task.status = "CLASSIFYING"
+        task.current_step = "Classifying with Gemini AI"
+        db.commit()
+
+        content = f"{item.title or ''}\n\n{item.description or ''}"
+        classification = classify_content(
+            subject=item.title or "",
+            body=content,
+            sender="Google Classroom",
+        )
+
+        # Step 2: Generate
+        task.status = "GENERATING"
+        task.current_step = f"Generating {output_type.lower()} with Gemini AI"
+        db.commit()
+
+        generated = generate_output(
+            title=item.title or "Classroom Item",
+            content=content,
+            output_type=output_type,
+        )
+
+        if "error" in generated:
+            task.status = "ERROR"
+            task.current_step = f"Generation failed: {generated['error'][:100]}"
+            db.commit()
+            return _serialize_task(task)
+
+        # Step 3: Save
+        task.status = "WRITING"
+        task.current_step = "Saving generated document"
+        db.commit()
+
+        # Generate DOCX
+        file_path = create_docx_from_markdown(generated["title"], generated["text"])
+
+        output_record = GeneratedOutput(
+            id=str(uuid.uuid4()),
+            owner_id=current_user.id,
+            task_id=task.id,
+            type=generated["type"],
+            title=generated["title"],
+            preview_text=generated["text"][:5000],
+            file_path=file_path,
+            created_at=dt.datetime.utcnow(),
+        )
+        db.add(output_record)
+
+        task.status = "DONE"
+        task.current_step = "Complete"
+        item.status = "done"
+        db.commit()
+
+        return _serialize_task(task)
+
+    except Exception as e:
+        task.status = "ERROR"
+        task.current_step = f"Failed: {str(e)[:200]}"
+        db.commit()
+        return _serialize_task(task)

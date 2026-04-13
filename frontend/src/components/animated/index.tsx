@@ -1,3 +1,4 @@
+import React, { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
@@ -82,7 +83,6 @@ export function AnimatedListItem({ children, className }: { children: React.Reac
 }
 
 // ─── AnimatedCounter: number count-up ────────────────────
-import { useEffect, useState, useRef } from 'react';
 
 export function AnimatedCounter({
   target,

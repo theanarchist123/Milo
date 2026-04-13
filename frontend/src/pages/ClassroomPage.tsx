@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, FileText, UploadCloud, MessageSquare } from 'lucide-react';
+import { Play, FileText, UploadCloud, MessageSquare, Loader2 } from 'lucide-react';
 import { PageWrapper } from '@/components/layout/PageWrapper';
 import { CourseCard } from '@/components/features/CourseCard';
 import { AnimatedPage } from '@/components/animated';
@@ -10,14 +10,19 @@ import { useNavigate } from 'react-router-dom';
 import type { CourseItem } from '@/types';
 
 export function ClassroomPage() {
-  const { courses, courseItems, loading } = useApi();
+  const { courses, courseItems, loading, fetchCourseItems } = useApi();
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'COURSEWORK' | 'MATERIAL' | 'ANNOUNCEMENT'>('COURSEWORK');
   const navigate = useNavigate();
 
   const handleCourseClick = (id: string) => {
-    setSelectedCourseId(id === selectedCourseId ? null : id);
-    setActiveTab('COURSEWORK');
+    if (id === selectedCourseId) {
+      setSelectedCourseId(null); // Collapse if already open
+    } else {
+      setSelectedCourseId(id);
+      setActiveTab('COURSEWORK');
+      fetchCourseItems(id); // Lazy fetch from backend
+    }
   };
 
   const selectedItems = selectedCourseId ? (courseItems[selectedCourseId] ?? []) : [];
@@ -83,7 +88,7 @@ export function ClassroomPage() {
                   ) : (
                     <div className="space-y-4">
                       {filteredItems.map((item) => (
-                        <CourseItemRow key={item.id} item={item} onProcess={() => navigate(`/process/${item.taskId ?? 'new'}`)} />
+                        <CourseItemRow key={item.id} item={item} />
                       ))}
                     </div>
                   )}
@@ -98,7 +103,27 @@ export function ClassroomPage() {
   );
 }
 
-function CourseItemRow({ item, onProcess }: { item: CourseItem; onProcess: () => void }) {
+function CourseItemRow({ item }: { item: CourseItem }) {
+  const navigate = useNavigate();
+  const [processing, setProcessing] = useState(false);
+
+  const handleProcess = async () => {
+    if (processing) return;
+    setProcessing(true);
+    try {
+      const { apiClient } = await import('@/lib/apiClient');
+      const res = await apiClient.post(`/process/classroom/${item.id}`, {}, { timeout: 120_000 });
+      const taskId = res.data?.id;
+      if (taskId) {
+        navigate(`/process/${taskId}`);
+      }
+    } catch (err) {
+      console.error('Processing failed:', err);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   return (
     <div className="flex gap-4 p-4 rounded-xl border border-white/[0.06] bg-elevated hover:border-white/10 transition-colors group">
       <div className="w-10 h-10 rounded-lg bg-surface flex items-center justify-center flex-shrink-0 border border-white/[0.06]">
@@ -140,15 +165,18 @@ function CourseItemRow({ item, onProcess }: { item: CourseItem; onProcess: () =>
               {item.status.toUpperCase()}
             </span>
             
-            {(item.type === 'COURSEWORK' || item.type === 'MATERIAL') && (
-              <button 
-                onClick={onProcess}
-                className="btn btn-secondary py-1.5 px-3 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-              >
+            <button 
+              onClick={handleProcess}
+              disabled={processing}
+              className="btn btn-secondary py-1.5 px-3 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              {processing ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
                 <Play size={12} className="fill-current" />
-                Process with Miro
-              </button>
-            )}
+              )}
+              {processing ? 'Processing…' : 'Process with Miro'}
+            </button>
         </div>
       </div>
     </div>

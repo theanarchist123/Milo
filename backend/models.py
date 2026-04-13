@@ -7,6 +7,8 @@ class User(Base):
     __tablename__ = "users"
     id = Column(String, primary_key=True, index=True) # Firebase UID
     email = Column(String, unique=True, index=True)
+    display_name = Column(String, nullable=True)       # From Google profile
+    photo_url = Column(String, nullable=True)           # Google profile picture URL
     google_access_token = Column(String, nullable=True)
     google_refresh_token = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
@@ -45,11 +47,12 @@ class CourseItem(Base):
     __tablename__ = "course_items"
     id = Column(String, primary_key=True, index=True) # Coursework ID
     course_id = Column(String, ForeignKey("courses.id"))
+    owner_id = Column(String, ForeignKey("users.id"), nullable=True)  # Direct user ref for queries
     title = Column(String)
     type = Column(String)
     description = Column(Text)
     due_date = Column(DateTime, nullable=True)
-    status = Column(String, default="pending")
+    status = Column(String, default="fetched")
 
     course = relationship("Course", back_populates="items")
 
@@ -62,6 +65,7 @@ class Task(Base):
     source_subject = Column(String)
     status = Column(String)
     current_step = Column(String)
+    error_message = Column(Text, nullable=True)
     started_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     owner = relationship("User", back_populates="tasks")

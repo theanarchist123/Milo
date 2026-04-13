@@ -7,6 +7,8 @@ import { AnimatedPage } from '@/components/animated';
 import { useApi } from '@/hooks/useApi';
 import { cn } from '@/lib/utils';
 import type { Output } from '@/types';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 // Shadcn primitives (simulated UI without full Radix install overhead for now)
 function Dialog({ open, onClose, output }: { open: boolean; onClose: () => void; output: Output | null }) {
@@ -23,13 +25,16 @@ function Dialog({ open, onClose, output }: { open: boolean; onClose: () => void;
         className="relative w-full max-w-4xl max-h-[85vh] bg-surface border border-white/[0.08] shadow-2xl rounded-2xl flex flex-col overflow-hidden z-10"
       >
         {/* Header */}
-        <div className="px-6 py-4 flex items-center justify-between border-b border-white/[0.08] bg-elevated/50">
-          <div>
-            <h2 className="text-lg font-bold text-text-primary">{output.title}</h2>
-            <p className="text-xs text-text-secondary mt-0.5">Preview generated content</p>
+        <div className="px-6 py-4 flex items-center justify-between gap-4 border-b border-white/[0.08] bg-elevated/50">
+          <div className="flex-1 min-w-0 pr-4">
+            <h2 className="text-lg font-bold text-text-primary line-clamp-2 leading-tight pr-4">{output.title}</h2>
+            <p className="text-xs text-text-secondary mt-1">Preview generated content</p>
           </div>
-          <div className="flex items-center gap-3">
-            <button className="btn btn-primary py-1.5 px-3 text-sm">
+          <div className="flex items-center gap-3 shrink-0">
+            <button 
+              onClick={() => window.open(output.docxUrl, '_blank')}
+              className="btn btn-primary py-1.5 px-3 text-sm flex-shrink-0"
+            >
               <Download size={14} /> Download DOCX
             </button>
             <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10 text-text-secondary transition-colors">
@@ -38,11 +43,11 @@ function Dialog({ open, onClose, output }: { open: boolean; onClose: () => void;
           </div>
         </div>
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-background">
-          <div className="prose prose-invert max-w-3xl mx-auto">
-            <pre className="whitespace-pre-wrap font-sans text-sm text-text-secondary leading-relaxed bg-transparent border-0 p-0 m-0">
-              {output.previewText}
-            </pre>
+        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-background text-text-secondary">
+          <div className="prose prose-invert max-w-3xl mx-auto prose-sm">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {output.previewText || ''}
+            </ReactMarkdown>
           </div>
         </div>
       </motion.div>

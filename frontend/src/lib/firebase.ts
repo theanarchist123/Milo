@@ -15,9 +15,16 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Provider with custom scopes required by backend Harvester
+// Provider with ALL scopes required by backend services
 export const googleProvider = new GoogleAuthProvider();
+// Gmail
 googleProvider.addScope('https://www.googleapis.com/auth/gmail.readonly');
-googleProvider.addScope('https://www.googleapis.com/auth/classroom.coursework.me.readonly');
+// Classroom — need all three; announcements needs its own scope
 googleProvider.addScope('https://www.googleapis.com/auth/classroom.courses.readonly');
+googleProvider.addScope('https://www.googleapis.com/auth/classroom.coursework.me.readonly');
+googleProvider.addScope('https://www.googleapis.com/auth/classroom.coursework.students.readonly');
+googleProvider.addScope('https://www.googleapis.com/auth/classroom.announcements.readonly');
+// Drive — for downloading attachments
 googleProvider.addScope('https://www.googleapis.com/auth/drive.readonly');
+// Force account selection so the OAuth scopes are always re-granted on sign-in
+googleProvider.setCustomParameters({ prompt: 'consent select_account' });

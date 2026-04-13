@@ -1,24 +1,75 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Bot, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { Bot, CheckCircle2, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
+import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { auth, googleProvider } from '@/lib/firebase';
 import { AnimatedPage, FloatingCard, AnimatedCounter } from '@/components/animated';
 import { useUnsplash } from '@/hooks/useUnsplash';
 import { useAuthStore } from '@/stores/authStore';
+import { apiClient } from '@/lib/apiClient';
 
 export function LoginPage() {
   const { url, loading } = useUnsplash('university library dark');
   const navigate = useNavigate();
-  const { setUser } = useAuthStore();
+  const { setUser, setAccessToken } = useAuthStore();
+  const [signingIn, setSigningIn] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleDevLogin = () => {
-    // Mock login since Firebase isn't fully wired without .env yet
-    setUser({
-      uid: 'dev-user-1',
-      email: 'student@university.edu',
-      displayName: 'Alex Student',
-      photoURL: null,
-    });
-    navigate('/dashboard');
+  const handleGoogleSignIn = async () => {
+    setError(null);
+    setSigningIn(true);
+    try {
+      // Real Firebase Google Sign-In with OAuth scopes (Gmail, Classroom, Drive)
+      const result = await signInWithPopup(auth, googleProvider);
+      const firebaseUser = result.user;
+
+      // Extract the Google OAuth2 access token from the credential
+      // This token lets the backend call Gmail, Classroom, and Drive APIs on behalf of the user
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const oauthAccessToken = credential?.accessToken ?? null;
+
+      // Set user in Zustand store — onAuthStateChanged in useAuth.ts will also fire
+      setUser({
+        uid: firebaseUser.uid,
+        email: firebaseUser.email ?? '',
+        displayName: firebaseUser.displayName ?? 'Student',
+        photoURL: firebaseUser.photoURL,
+      });
+
+      // Store the OAuth access token so components can access it
+      setAccessToken(oauthAccessToken);
+
+      // Send the OAuth access token to the backend so it can call Google APIs
+      if (oauthAccessToken) {
+        try {
+          const idToken = await firebaseUser.getIdToken();
+          await apiClient.post('/auth/store-token', {
+            accessToken: oauthAccessToken,
+            displayName: firebaseUser.displayName,
+            email: firebaseUser.email,
+            photoURL: firebaseUser.photoURL,
+          }, {
+            headers: { Authorization: `Bearer ${idToken}` },
+          });
+        } catch (backendErr) {
+          // Non-fatal — user can still use the app, sync will prompt re-auth if token missing
+          console.warn('Could not store token in backend (non-fatal):', backendErr);
+        }
+      }
+
+      navigate('/dashboard');
+    } catch (err: unknown) {
+      console.error('Google sign-in error:', err);
+      const message =
+        err instanceof Error ? err.message : 'Sign-in failed. Please try again.';
+      // Don't show the popup-closed error as a real error
+      if (!(message.includes('popup-closed') || message.includes('cancelled'))) {
+        setError('Sign-in failed. Please check your connection and try again.');
+      }
+    } finally {
+      setSigningIn(false);
+    }
   };
 
   return (
@@ -111,20 +162,37 @@ export function LoginPage() {
         <div className="w-full max-w-sm">
           <div className="text-center mb-10">
             <h2 className="text-3xl font-bold text-white mb-2">Welcome to Miro</h2>
-            <p className="text-text-secondary">Sign in with your university account</p>
+            <p className="text-text-secondary">Sign in with your university Google account</p>
           </div>
 
+          {/* Error message */}
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center gap-3 p-3 mb-4 rounded-lg bg-danger/10 border border-danger/20 text-danger text-sm"
+            >
+              <AlertCircle size={16} className="flex-shrink-0" />
+              {error}
+            </motion.div>
+          )}
+
           <button
-            onClick={handleDevLogin}
-            className="w-full flex items-center justify-center gap-3 bg-white text-black font-semibold py-3.5 px-4 rounded-xl hover:bg-gray-100 transition-all active:scale-[0.98] amber-glow mb-8 hover:shadow-[0_0_30px_rgba(245,200,66,0.3)] border-2 border-transparent hover:border-amber"
+            onClick={handleGoogleSignIn}
+            disabled={signingIn}
+            className="w-full flex items-center justify-center gap-3 bg-white text-black font-semibold py-3.5 px-4 rounded-xl hover:bg-gray-100 transition-all active:scale-[0.98] amber-glow mb-8 hover:shadow-[0_0_30px_rgba(245,200,66,0.3)] border-2 border-transparent hover:border-amber disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:border-transparent disabled:hover:bg-white"
           >
-            <svg viewBox="0 0 24 24" className="w-5 h-5">
-              <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-            </svg>
-            Continue with Google
+            {signingIn ? (
+              <Loader2 size={20} className="animate-spin text-gray-500" />
+            ) : (
+              <svg viewBox="0 0 24 24" className="w-5 h-5">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+              </svg>
+            )}
+            {signingIn ? 'Signing in…' : 'Continue with Google'}
           </button>
 
           <div className="space-y-4">

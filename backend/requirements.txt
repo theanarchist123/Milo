@@ -1,0 +1,19 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+python-dotenv
+python-multipart
+pydantic
+
+# Gemini AI (new SDK — replaces deprecated google-generativeai)
+google-genai
+
+# Google API access (Gmail, Classroom, Drive + Firebase token verification)
+google-api-python-client
+google-auth>=2.0.0
+google-auth-httplib2
+google-auth-oauthlib
+
+# NOTE: firebase-admin is NOT required.
+# We use google.oauth2.id_token.verify_firebase_token (part of google-auth)
+# which verifies Firebase JWTs using Google's public keys — no service account needed.

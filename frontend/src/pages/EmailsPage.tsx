@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Filter, Play, Mail } from 'lucide-react';
+import { Search, Filter, Play, Mail, Loader2 } from 'lucide-react';
 import { PageWrapper } from '@/components/layout/PageWrapper';
 import { EmailCard } from '@/components/features/EmailCard';
 import { AnimatedPage } from '@/components/animated';
@@ -17,6 +17,8 @@ export function EmailsPage() {
   const [search, setSearch] = useState('');
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const navigate = useNavigate();
+  const [processing, setProcessing] = useState<string | null>(null); // email ID being processed
+  const [processError, setProcessError] = useState<string | null>(null);
 
   const filteredEmails = emails.filter((e) => {
     if (activeTab !== 'All') {
@@ -105,11 +107,32 @@ export function EmailsPage() {
                     </div>
                     {/* Process Button */}
                     <button 
-                      onClick={() => navigate(`/process/${selectedEmail.taskId ?? 'new'}`)}
+                      onClick={async () => {
+                        if (processing) return;
+                        setProcessing(selectedEmail.id);
+                        setProcessError(null);
+                        try {
+                          const { apiClient } = await import('@/lib/apiClient');
+                          const res = await apiClient.post(`/process/email/${selectedEmail.id}`, {}, { timeout: 120_000 });
+                          const taskId = res.data?.id;
+                          if (taskId) {
+                            navigate(`/process/${taskId}`);
+                          }
+                        } catch (err: any) {
+                          setProcessError(err?.response?.data?.detail || err?.message || 'Processing failed');
+                        } finally {
+                          setProcessing(null);
+                        }
+                      }}
+                      disabled={processing === selectedEmail.id}
                       className="btn btn-primary flex-shrink-0"
                     >
-                      <Play size={14} className="fill-current" />
-                      Process with Miro
+                      {processing === selectedEmail.id ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Play size={14} className="fill-current" />
+                      )}
+                      {processing === selectedEmail.id ? 'Processing…' : 'Process with Miro'}
                     </button>
                   </div>
 

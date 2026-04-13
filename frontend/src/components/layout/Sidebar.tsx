@@ -2,30 +2,92 @@ import { NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Mail, GraduationCap, FileText,
-  Settings, RefreshCw, ChevronLeft, ChevronRight,
+  Settings, RefreshCw, ChevronLeft, ChevronRight, CheckCircle2, AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
 import { useState } from 'react';
+import { apiClient } from '@/lib/apiClient';
 
 const NAV_ITEMS = [
   { to: '/dashboard',  label: 'Dashboard',  icon: LayoutDashboard },
-  { to: '/emails',     label: 'Emails',      icon: Mail,            badge: 3 },
+  { to: '/emails',     label: 'Emails',      icon: Mail },
   { to: '/classroom',  label: 'Classroom',   icon: GraduationCap },
   { to: '/files',      label: 'The Vault',   icon: FileText },
   { to: '/settings',   label: 'Settings',    icon: Settings },
 ];
 
-export function Sidebar() {
-  const { user } = useAuthStore();
-  const { sidebarOpen, toggleSidebar } = useUiStore();
-  const [syncing, setSyncing] = useState(false);
+type SyncState = 'idle' | 'syncing' | 'done' | 'error' | 'no-token';
+type SyncResult = { label: string; isError: boolean };
 
-  const handleSync = () => {
-    setSyncing(true);
-    setTimeout(() => setSyncing(false), 2500);
+export function Sidebar() {
+  const { user, accessToken } = useAuthStore();
+  const { sidebarOpen, toggleSidebar, requestRefetch } = useUiStore();
+  const [syncState, setSyncState] = useState<SyncState>('idle');
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const isConnected = !!user;
+
+  const handleSync = async () => {
+    if (syncState === 'syncing') return;
+
+    if (!accessToken) {
+      setSyncState('no-token');
+      setSyncResult({ label: 'Sign out → sign in again to sync', isError: true });
+      setTimeout(() => { setSyncState('idle'); setSyncResult(null); }, 5000);
+      return;
+    }
+
+    setSyncState('syncing');
+    setSyncResult(null);
+
+    try {
+      // Sync is now synchronous on the backend — use a 90s timeout since
+      // fetching 100 emails + multiple courses can take 20-40 seconds.
+      const res = await apiClient.post('/sync/all', {}, { timeout: 90_000 });
+      const data = res.data;
+
+      // Check for errors
+      if (data.status === 'error' || data.error === 'no_token') {
+        const msg = data.gmail?.message || data.classroom?.message || data.message || 'Sync failed';
+        const isTokenExpiry = msg.toLowerCase().includes('expired') || msg.toLowerCase().includes('sign out');
+        setSyncState('error');
+        setSyncResult({
+          label: isTokenExpiry ? 'Token expired — sign out & back in' : msg.slice(0, 60),
+          isError: true,
+        });
+      } else {
+        // Build a friendly result summary
+        const emailsSaved = data.gmail?.saved ?? 0;
+        const coursesFetched = data.classroom?.courses ?? 0;
+        const itemsFetched = data.classroom?.items ?? 0;
+        const gmailErr = data.gmail?.error;
+        const classErr = data.classroom?.error;
+
+        let label = '';
+        if (!gmailErr && !classErr) {
+          label = `Synced ${emailsSaved} email${emailsSaved !== 1 ? 's' : ''}, ${coursesFetched} course${coursesFetched !== 1 ? 's' : ''}, ${itemsFetched} item${itemsFetched !== 1 ? 's' : ''}`;
+        } else {
+          label = `Partial: ${emailsSaved} emails (${gmailErr ? '❌ Gmail' : '✓'}, ${classErr ? '❌ Classroom' : '✓'})`;
+        }
+
+        setSyncState('done');
+        setSyncResult({ label, isError: false });
+        requestRefetch(); // Tell useApi to reload all data from DB
+      }
+    } catch (err: unknown) {
+      const axiosErr = err as { message?: string };
+      const isTimeout = axiosErr?.message?.includes('timeout');
+      setSyncState('error');
+      setSyncResult({
+        label: isTimeout ? 'Sync timed out — try again' : 'Network error — is the backend running?',
+        isError: true,
+      });
+    } finally {
+      setTimeout(() => { setSyncState('idle'); setSyncResult(null); }, 8000);
+    }
   };
+
 
   return (
     <motion.aside
@@ -48,8 +110,7 @@ export function Sidebar() {
               transition={{ duration: 0.2 }}
               className="font-bold text-lg tracking-tight text-text-primary"
             >
-              Miro
-              <span className="text-amber">.</span>
+              Miro<span className="text-amber">.</span>
             </motion.span>
           )}
         </AnimatePresence>
@@ -57,8 +118,14 @@ export function Sidebar() {
 
       {/* User */}
       <div className="flex items-center gap-3 px-4 py-4 border-b border-white/[0.06]">
-        <div className="w-8 h-8 rounded-full bg-indigo flex items-center justify-center flex-shrink-0 text-xs font-semibold text-white">
-          {user?.displayName?.charAt(0) ?? 'U'}
+        <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 border-2 border-white/10">
+          {user?.photoURL ? (
+            <img src={user.photoURL} alt={user.displayName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+          ) : (
+            <div className="w-full h-full bg-indigo flex items-center justify-center text-xs font-semibold text-white">
+              {user?.displayName?.charAt(0) ?? 'U'}
+            </div>
+          )}
         </div>
         <AnimatePresence>
           {sidebarOpen && (
@@ -70,8 +137,10 @@ export function Sidebar() {
             >
               <p className="text-sm font-medium text-text-primary truncate">{user?.displayName ?? 'Student'}</p>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-success" />
-                <span className="text-xs text-text-secondary">Connected</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-success' : 'bg-yellow-400'}`} />
+                <span className="text-xs text-text-secondary truncate">
+                  {isConnected ? (accessToken ? 'Google connected' : 'Sign in to sync') : 'Not signed in'}
+                </span>
               </div>
             </motion.div>
           )}
@@ -80,7 +149,7 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-1">
-        {NAV_ITEMS.map(({ to, label, icon: Icon, badge }) => (
+        {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -96,10 +165,7 @@ export function Sidebar() {
           >
             {({ isActive }) => (
               <>
-                <Icon
-                  size={18}
-                  className={cn('flex-shrink-0', isActive && 'text-amber')}
-                />
+                <Icon size={18} className={cn('flex-shrink-0', isActive && 'text-amber')} />
                 <AnimatePresence>
                   {sidebarOpen && (
                     <motion.span
@@ -112,11 +178,6 @@ export function Sidebar() {
                     </motion.span>
                   )}
                 </AnimatePresence>
-                {badge && sidebarOpen && (
-                  <span className="text-xs bg-amber text-[#0A0A0F] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                    {badge}
-                  </span>
-                )}
               </>
             )}
           </NavLink>
@@ -124,30 +185,60 @@ export function Sidebar() {
       </nav>
 
       {/* Sync button */}
-      <div className="px-3 pb-5 pt-2 border-t border-white/[0.06]">
+      <div className="px-3 pb-5 pt-2 border-t border-white/[0.06] space-y-2">
         <button
           onClick={handleSync}
+          disabled={syncState === 'syncing'}
           className={cn(
             'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
-            syncing
-              ? 'bg-amber-muted text-amber amber-glow'
-              : 'bg-elevated text-text-secondary hover:text-text-primary hover:bg-white/[0.06]',
+            syncState === 'idle'     && 'bg-elevated text-text-secondary hover:text-text-primary hover:bg-white/[0.06]',
+            syncState === 'syncing'  && 'bg-amber-muted text-amber amber-glow cursor-wait',
+            syncState === 'done'     && 'bg-success/10 text-success',
+            syncState === 'error'    && 'bg-danger/10 text-danger',
+            syncState === 'no-token' && 'bg-yellow-500/10 text-yellow-400',
             !sidebarOpen && 'justify-center px-2'
           )}
         >
-          <RefreshCw size={16} className={cn('flex-shrink-0', syncing && 'spinner')} />
+          {syncState === 'done' ? (
+            <CheckCircle2 size={16} className="flex-shrink-0 text-success" />
+          ) : syncState === 'no-token' || syncState === 'error' ? (
+            <AlertTriangle size={16} className="flex-shrink-0" />
+          ) : (
+            <RefreshCw size={16} className={cn('flex-shrink-0', syncState === 'syncing' && 'spinner')} />
+          )}
           <AnimatePresence>
             {sidebarOpen && (
               <motion.span
+                key={syncState + (syncResult?.label ?? '')}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
+                className="truncate text-left"
               >
-                {syncing ? 'Syncing…' : 'Sync Now'}
+                {syncResult?.label ||
+                  ({
+                    idle:       'Sync Now',
+                    syncing:    'Fetching data…',
+                    done:       'Sync complete ✓',
+                    error:      'Sync failed — retry?',
+                    'no-token': 'Sign in again to sync',
+                  }[syncState])}
               </motion.span>
             )}
           </AnimatePresence>
         </button>
+
+        {/* Progress bar shown while syncing — matches the 90s API timeout */}
+        {syncState === 'syncing' && sidebarOpen && (
+          <div className="h-1 rounded-full bg-elevated overflow-hidden">
+            <motion.div
+              className="h-full bg-amber rounded-full"
+              initial={{ width: '2%' }}
+              animate={{ width: '92%' }}
+              transition={{ duration: 85, ease: 'easeOut' }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Collapse toggle */}

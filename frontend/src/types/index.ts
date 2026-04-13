@@ -115,12 +115,13 @@ export interface Output {
   docxUrl: string;
   pdfUrl: string;
   fileSizeBytes: number;
-  expiresAt: string;
+  expiresAt?: string;   // Optional — backend may not set an expiry
   previewText?: string;
 }
 
 // ─── Activity ─────────────────────────────────────────────
-export type ActivityStatus = 'processing' | 'done' | 'error';
+// Backend may return any of these statuses as activity items
+export type ActivityStatus = 'processing' | 'done' | 'error' | 'fetched' | 'classified' | 'extracting' | 'generating';
 
 export interface ActivityItem {
   id: string;

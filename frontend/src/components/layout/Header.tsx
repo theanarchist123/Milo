@@ -33,7 +33,9 @@ export function Header({ title, subtitle }: HeaderProps) {
             <p className="text-sm font-medium text-text-primary">
               {getGreeting()}, <span className="text-amber">{firstName}</span>
             </p>
-            <p className="text-xs text-text-secondary">3 new tasks processed since your last visit</p>
+            <p className="text-xs text-text-secondary">
+              {user ? 'Click Sync Now in the sidebar to fetch your latest emails & coursework' : 'Loading…'}
+            </p>
           </>
         )}
       </div>
@@ -59,8 +61,14 @@ export function Header({ title, subtitle }: HeaderProps) {
         </button>
 
         {/* Avatar */}
-        <div className="w-9 h-9 rounded-full bg-indigo flex items-center justify-center text-sm font-semibold text-white flex-shrink-0">
-          {user?.displayName?.charAt(0) ?? 'U'}
+        <div className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0 border-2 border-white/10">
+          {user?.photoURL ? (
+            <img src={user.photoURL} alt={user.displayName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+          ) : (
+            <div className="w-9 h-9 rounded-full bg-indigo flex items-center justify-center text-sm font-semibold text-white">
+              {user?.displayName?.charAt(0) ?? 'U'}
+            </div>
+          )}
         </div>
       </div>
     </header>

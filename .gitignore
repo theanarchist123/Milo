@@ -1,0 +1,19 @@
+# Root-level ignore rules
+
+# Local env files (never commit secrets)
+*.env.local
+backend/.env.local
+frontend/.env.local
+
+# Keep tracked defaults if needed, but ignore private overrides
+
+# Local runtime data
+backend/miro.db
+backend/media/outputs/*
+!backend/media/outputs/.gitkeep
+
+# Frontend build output
+frontend/dist
+
+# Logs
+*.log

@@ -16,16 +16,21 @@ from typing import Optional
 from services.browser_scraper import scrape_url as browser_scrape_url
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load local overrides first (untracked), then fallback defaults from .env.
+load_dotenv(dotenv_path=".env.local", override=False)
+load_dotenv(override=False)
 logger = logging.getLogger(__name__)
 
 # ─── Configure Ollama API ───────────────────────────────────────────────────
-OLLAMA_API_KEY = "79a6ab116ce8470bab92bbc2f14db403.9Y3wlTGZDqQTqc7gsajmdv55"
-OLLAMA_ENDPOINT = "https://ollama.com/v1/chat/completions"
-MODEL_NAME = "deepseek-v3.1:671b"
+OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "").strip()
+OLLAMA_ENDPOINT = os.getenv("OLLAMA_ENDPOINT", "https://ollama.com/v1/chat/completions").strip()
+MODEL_NAME = os.getenv("OLLAMA_MODEL", "deepseek-v3.1:671b").strip()
 
 def _call_ollama(prompt: str, json_format: bool = False, max_tokens: int = 8192) -> str:
     """Wrapper to call Ollama Chat Completions"""
+    if not OLLAMA_API_KEY:
+        raise ValueError("OLLAMA_API_KEY is not set. Configure it in backend/.env.local for local or Vercel env vars for production.")
+
     headers = {
         "Authorization": f"Bearer {OLLAMA_API_KEY}",
         "Content-Type": "application/json"

@@ -8,8 +8,9 @@ from typing import Optional
 from database import get_db
 from models import User
 
-# Load .env before reading any env vars
-load_dotenv()
+# Load local overrides first (untracked), then fallback defaults from .env.
+load_dotenv(dotenv_path=".env.local", override=False)
+load_dotenv(override=False)
 
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
 

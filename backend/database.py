@@ -4,7 +4,9 @@ from sqlalchemy.orm import sessionmaker
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load local overrides first (untracked), then fallback defaults from .env.
+load_dotenv(dotenv_path=".env.local", override=False)
+load_dotenv(override=False)
 
 # Build the connection URL
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./miro.db")

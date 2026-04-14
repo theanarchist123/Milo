@@ -1,16 +1,32 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
-// As provided by user
 const firebaseConfig = {
-  apiKey: "AIzaSyCevMRWE1oSU-5XiAj061i3O02I_uj_0Gw",
-  authDomain: "miro-ai-693db.firebaseapp.com",
-  projectId: "miro-ai-693db",
-  storageBucket: "miro-ai-693db.firebasestorage.app",
-  messagingSenderId: "800431554426",
-  appId: "1:800431554426:web:0bc1947339b9bea4baa0c3",
-  measurementId: "G-K6FTB9H3WY"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? "",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ?? "",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID ?? "",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ?? "",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ?? "",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID ?? "",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID ?? "",
 };
+
+const requiredFirebaseFields = [
+  "apiKey",
+  "authDomain",
+  "projectId",
+  "storageBucket",
+  "messagingSenderId",
+  "appId",
+] as const;
+
+const missingFirebaseFields = requiredFirebaseFields.filter((field) => !firebaseConfig[field]);
+if (missingFirebaseFields.length > 0) {
+  throw new Error(
+    `[firebase] Missing environment variables for: ${missingFirebaseFields.join(", ")}. ` +
+    "Set them in frontend/.env.local for local dev or Vercel project environment variables for production."
+  );
+}
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);

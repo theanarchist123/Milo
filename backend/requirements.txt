@@ -4,6 +4,9 @@ sqlalchemy
 python-dotenv
 python-multipart
 pydantic
+apscheduler
+requests
+beautifulsoup4
 
 # Gemini AI (new SDK — replaces deprecated google-generativeai)
 google-genai

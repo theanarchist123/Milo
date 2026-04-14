@@ -1,6 +1,8 @@
 """Quick test: verify new google.genai SDK with gemini-3-flash-preview."""
 import os
-os.environ.setdefault("GEMINI_API_KEY", "AIzaSyDmBtHlo5JeqS51OvTrmH9EoyN8-b3fXvE")
+
+if not os.getenv("OLLAMA_API_KEY"):
+    raise RuntimeError("Set OLLAMA_API_KEY in environment before running this test.")
 
 from services.gemini_service import classify_content, generate_output
 

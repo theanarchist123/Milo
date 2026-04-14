@@ -61,26 +61,45 @@ scheduler = BackgroundScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup logic
-    logger.info("[App] Starting APScheduler...")
-    scheduler.start()
-    
-    # We will register the job dynamically or from a service module
-    from services.auto_processor import run_auto_processing_cycle
-    # Run every 5 min by default to support the shortest UI interval. Individual user logic checks their own interval.
-    scheduler.add_job(run_auto_processing_cycle, 'interval', minutes=5, id='auto_processor_job')
+    # On Vercel serverless, avoid long-running background schedulers.
+    is_vercel = os.getenv("VERCEL") == "1"
+    if is_vercel:
+        logger.info("[App] Vercel runtime detected; APScheduler is disabled.")
+    else:
+        logger.info("[App] Starting APScheduler...")
+        scheduler.start()
+
+        # We will register the job dynamically or from a service module
+        from services.auto_processor import run_auto_processing_cycle
+        # Run every 5 min by default to support the shortest UI interval. Individual user logic checks their own interval.
+        scheduler.add_job(run_auto_processing_cycle, 'interval', minutes=5, id='auto_processor_job')
     
     yield
     # Shutdown logic
-    logger.info("[App] Shutting down APScheduler...")
-    scheduler.shutdown()
+    if not is_vercel:
+        logger.info("[App] Shutting down APScheduler...")
+        scheduler.shutdown()
 
 app = FastAPI(title="Miro AI", description="Academic Assistant Backend", lifespan=lifespan)
 
+cors_allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+frontend_origin = os.getenv("FRONTEND_ORIGIN", "").strip()
+if frontend_origin and frontend_origin not in cors_allowed_origins:
+    cors_allowed_origins.append(frontend_origin)
+
+cors_allowed_origin_regex = os.getenv(
+    "CORS_ALLOWED_ORIGIN_REGEX",
+    r"http://(localhost|127\.0\.0\.1)(:\d+)?",
+)
+
 app.add_middleware(
     CORSMiddleware,
-    # Match any localhost / 127.0.0.1 on any port — covers Vite on 5173, 5174, 5175 etc.
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_origins=cors_allowed_origins,
+    allow_origin_regex=cors_allowed_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

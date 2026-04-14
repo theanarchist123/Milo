@@ -4,7 +4,7 @@ import { cn, timeAgo } from '@/lib/utils';
 import type { Email, EmailType } from '@/types';
 
 const TYPE_BADGE: Record<EmailType, string> = {
-  ASSIGNMENT:   'badge-amber',
+  ASSIGNMENT:   'badge-emerald',
   NOTES:        'badge-indigo',
   ANNOUNCEMENT: 'badge-teal',
   UNCLASSIFIED: 'badge-gray',
@@ -34,8 +34,8 @@ export function EmailCard({ email, isSelected, onClick, index }: EmailCardProps)
       transition={{ duration: 0.3, delay: index * 0.05 }}
       onClick={onClick}
       className={cn(
-        'flex items-start gap-3 px-4 py-3.5 cursor-pointer border-b border-white/[0.04] transition-all hover:bg-elevated/40',
-        isSelected && 'bg-amber-muted border-l-2 border-l-amber'
+        'flex items-start gap-3 px-4 py-3.5 cursor-pointer border-b border-white/[0.04] transition-all hover:bg-surface/40',
+        isSelected && 'bg-emerald-muted border-l-2 border-l-amber'
       )}
     >
       {/* Sender avatar */}
@@ -68,7 +68,7 @@ export function EmailCard({ email, isSelected, onClick, index }: EmailCardProps)
             <CheckCircle2 size={12} className="text-success ml-auto" />
           )}
           {email.status === 'extracting' || email.status === 'generating' || email.status === 'classified' ? (
-            <Loader2 size={12} className="text-amber spinner ml-auto" />
+            <Loader2 size={12} className="text-emerald spinner ml-auto" />
           ) : null}
           {email.status === 'error' && (
             <XCircle size={12} className="text-danger ml-auto" />
@@ -76,7 +76,7 @@ export function EmailCard({ email, isSelected, onClick, index }: EmailCardProps)
         </div>
       </div>
 
-      {isSelected && <ChevronRight size={14} className="text-amber flex-shrink-0 mt-1" />}
+      {isSelected && <ChevronRight size={14} className="text-emerald flex-shrink-0 mt-1" />}
     </motion.div>
   );
 }

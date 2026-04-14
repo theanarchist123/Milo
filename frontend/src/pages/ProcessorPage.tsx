@@ -109,9 +109,9 @@ export function ProcessorPage() {
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ duration: 0.4 }}
-              className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-amber-muted mb-4"
+              className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-muted mb-4"
             >
-              {task ? <Sparkles size={32} className="text-amber" /> : <Bot size={32} className="text-amber" />}
+              {task ? <Sparkles size={32} className="text-emerald" /> : <Bot size={32} className="text-emerald" />}
             </motion.div>
 
             <h1 className="text-2xl font-bold text-white mb-2">
@@ -127,7 +127,7 @@ export function ProcessorPage() {
               <span className={`inline-block mt-3 text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full ${
                 task.status === 'DONE'  ? 'bg-success/10 text-success' :
                 task.status === 'ERROR' ? 'bg-danger/10 text-danger' :
-                'bg-amber/10 text-amber'
+                'bg-emerald/10 text-emerald'
               }`}>
                 {task.status}
               </span>
@@ -139,7 +139,7 @@ export function ProcessorPage() {
                 key={task.currentStep}
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="text-sm text-amber mt-3"
+                className="text-sm text-emerald mt-3"
               >
                 {task.currentStep}
               </motion.p>
@@ -164,7 +164,7 @@ export function ProcessorPage() {
 
               {/* Done message */}
               {task?.status === 'DONE' && (
-                <div className="mt-8 pt-6 border-t border-white/[0.06] text-center">
+                <div className="mt-8 pt-6 border-t border-border text-center">
                   <p className="text-success font-semibold mb-3">✓ Processing complete — your document is ready!</p>
                   <button onClick={() => navigate('/files')} className="btn btn-primary">
                     View in The Vault
@@ -186,7 +186,7 @@ export function ProcessorPage() {
               <p className="text-text-secondary mb-6">
                 Go to <strong className="text-text-primary">Emails</strong> or{' '}
                 <strong className="text-text-primary">Classroom</strong> and click&nbsp;
-                <span className="text-amber font-semibold">"Process with Miro"</span> on any item to run the AI pipeline.
+                <span className="text-emerald font-semibold">"Process with Miro"</span> on any item to run the AI pipeline.
               </p>
               <div className="flex gap-3 justify-center">
                 <button onClick={() => navigate('/emails')} className="btn btn-secondary">
@@ -204,7 +204,7 @@ export function ProcessorPage() {
             <div className="card overflow-hidden">
               <button
                 onClick={() => setExtractedOpen(!extractedOpen)}
-                className="w-full flex items-center justify-between p-4 bg-surface hover:bg-elevated transition-colors"
+                className="w-full flex items-center justify-between p-4 bg-surface hover:bg-surface transition-colors"
               >
                 <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
                   <FileText size={14} /> Processing Details
@@ -223,7 +223,7 @@ export function ProcessorPage() {
                     transition={{ duration: 0.25 }}
                     className="overflow-hidden"
                   >
-                    <div className="p-4 border-t border-white/[0.06] bg-background">
+                    <div className="p-4 border-t border-border bg-background">
                       <div className="space-y-2 text-sm">
                         <p><span className="text-text-tertiary">Task ID:</span> <span className="text-text-secondary font-mono text-xs">{task.id}</span></p>
                         <p><span className="text-text-tertiary">Source:</span> <span className="text-text-secondary">{task.sourceType} — {task.sourceSubject}</span></p>

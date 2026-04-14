@@ -24,7 +24,7 @@ export function CourseCard({ course, isSelected, onClick, index }: CourseCardPro
       onClick={onClick}
       className={cn(
         'relative rounded-xl overflow-hidden cursor-pointer h-44 border transition-all',
-        isSelected ? 'border-amber shadow-[0_0_20px_rgba(245,200,66,0.2)]' : 'border-white/[0.06] hover:border-white/10'
+        isSelected ? 'border-emerald shadow-[0_0_20px_rgba(245,200,66,0.2)]' : 'border-border hover:border-border'
       )}
     >
       {/* Background image */}
@@ -47,14 +47,14 @@ export function CourseCard({ course, isSelected, onClick, index }: CourseCardPro
 
         {course.pendingCount > 0 && (
           <div className="flex items-center gap-1.5 mt-2">
-            <AlertCircle size={12} className="text-amber" />
-            <span className="text-xs text-amber font-medium">{course.pendingCount} pending</span>
+            <AlertCircle size={12} className="text-emerald" />
+            <span className="text-xs text-emerald font-medium">{course.pendingCount} pending</span>
           </div>
         )}
       </div>
 
       {isSelected && (
-        <div className="absolute inset-0 border-2 border-amber rounded-xl pointer-events-none" />
+        <div className="absolute inset-0 border-2 border-emerald rounded-xl pointer-events-none" />
       )}
     </motion.div>
   );

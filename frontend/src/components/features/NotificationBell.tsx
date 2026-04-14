@@ -1,0 +1,162 @@
+import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Bell, Check, ExternalLink } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { apiClient } from '@/lib/apiClient';
+import { useAuthStore } from '@/stores/authStore';
+
+interface Notification {
+  id: string;
+  title: string;
+  body: string;
+  type: string;
+  sourceUrl: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export function NotificationBell() {
+  const [isOpen, setIsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const { user } = useAuthStore();
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+
+  const loadNotifications = async () => {
+    if (!user) return;
+    try {
+      const res = await apiClient.get('/notifications');
+      setNotifications(res.data);
+    } catch (err) {
+      console.warn('Failed to load notifications:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadNotifications();
+
+    // Set up SSE connection
+    const token = localStorage.getItem('miro_auth_token');
+    const evtSource = new EventSource(`http://localhost:8000/api/notifications/stream?token=${token}`);
+    
+    evtSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (typeof data.unreadCount === 'number') {
+           // We just received a ping. Best to reload notifications fully if we suspect a change.
+           // However, to keep it simple and efficient, we will just reload every time we get a ping 
+           // IF the user has focus or we specifically see a count change via SSE logic.
+           // For this MVP, we load on mount, and let the SSE connection trigger a refresh.
+           loadNotifications();
+        }
+      } catch (e) {}
+    };
+
+    return () => evtSource.close();
+  }, [user]);
+
+  // Click outside to close
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const markAllRead = async () => {
+    try {
+      await apiClient.post('/notifications/read-all');
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleNotificationClick = (n: Notification) => {
+    setIsOpen(false);
+    if (n.sourceUrl) {
+      navigate(n.sourceUrl);
+    }
+  };
+
+  const unreadCount = notifications.filter(n => !n.isRead).length;
+
+  if (!user) return null;
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        className="relative p-2 rounded-lg text-text-tertiary hover:text-white hover:bg-white/5 transition-colors focus:outline-none"
+      >
+        <Bell size={20} />
+        {unreadCount > 0 && (
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            className="absolute top-1 right-1.5 w-2 h-2 rounded-full bg-danger ring-2 ring-background"
+          />
+        )}
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="absolute right-0 mt-2 w-80 max-h-[85vh] overflow-y-auto bg-surface border border-border rounded-xl shadow-2xl z-50 flex flex-col"
+          >
+            <div className="flex items-center justify-between p-3 border-b border-border sticky top-0 bg-surface/95 backdrop-blur z-10">
+              <h3 className="text-sm font-semibold text-text-primary">Notifications</h3>
+              {unreadCount > 0 && (
+                <button 
+                  onClick={markAllRead}
+                  className="text-[11px] font-medium text-emerald hover:text-emerald-light transition-colors flex items-center gap-1"
+                >
+                  <Check size={12} /> Mark all read
+                </button>
+              )}
+            </div>
+
+            <div className="p-2 space-y-1">
+              {notifications.length === 0 ? (
+                <div className="p-4 text-center text-sm text-text-tertiary">
+                  No notifications yet.
+                </div>
+              ) : (
+                notifications.map(n => (
+                  <button
+                    key={n.id}
+                    onClick={() => handleNotificationClick(n)}
+                    className={`w-full text-left p-3 rounded-lg transition-colors flex items-start gap-3 ${
+                      n.isRead ? 'hover:bg-white/[0.04]' : 'bg-emerald/5 hover:bg-emerald/10'
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start gap-2 mb-1">
+                        <strong className={`text-sm tracking-tight ${n.isRead ? 'text-text-primary' : 'text-emerald'}`}>
+                          {n.title}
+                        </strong>
+                        <span className="text-[10px] text-text-tertiary whitespace-nowrap mt-0.5">
+                          {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <p className={`text-xs leading-relaxed ${n.isRead ? 'text-text-secondary' : 'text-text-primary/90'}`}>
+                        {n.body}
+                      </p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}

@@ -1,6 +1,7 @@
 import { Bell, Search, Command } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { useUiStore } from '@/stores/uiStore';
+import { NotificationBell } from '../features/NotificationBell';
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -20,7 +21,7 @@ export function Header({ title, subtitle }: HeaderProps) {
   const firstName = user?.displayName?.split(' ')[0] ?? 'Student';
 
   return (
-    <header className="h-16 flex items-center justify-between px-6 border-b border-white/[0.06] bg-surface/80 backdrop-blur-sm flex-shrink-0">
+    <header className="h-16 flex items-center justify-between px-6 border-b border-border bg-surface/80 backdrop-blur-sm flex-shrink-0">
       {/* Left: greeting */}
       <div>
         {title ? (
@@ -31,7 +32,7 @@ export function Header({ title, subtitle }: HeaderProps) {
         ) : (
           <>
             <p className="text-sm font-medium text-text-primary">
-              {getGreeting()}, <span className="text-amber">{firstName}</span>
+              {getGreeting()}, <span className="text-emerald">{firstName}</span>
             </p>
             <p className="text-xs text-text-secondary">
               {user ? 'Click Sync Now in the sidebar to fetch your latest emails & coursework' : 'Loading…'}
@@ -45,7 +46,7 @@ export function Header({ title, subtitle }: HeaderProps) {
         {/* CMD+K Search */}
         <button
           onClick={() => setCommandPaletteOpen(true)}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-elevated border border-white/[0.06] text-text-secondary hover:border-white/10 hover:text-text-primary transition-all text-sm"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface border border-border text-text-secondary hover:border-border hover:text-text-primary transition-all text-sm"
         >
           <Search size={14} />
           <span className="hidden sm:inline">Search everything…</span>
@@ -55,13 +56,10 @@ export function Header({ title, subtitle }: HeaderProps) {
         </button>
 
         {/* Notification bell */}
-        <button className="relative w-9 h-9 rounded-lg bg-elevated border border-white/[0.06] flex items-center justify-center hover:border-white/10 transition-all text-text-secondary hover:text-text-primary">
-          <Bell size={16} />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber border-2 border-surface" />
-        </button>
+        <NotificationBell />
 
         {/* Avatar */}
-        <div className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0 border-2 border-white/10">
+        <div className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0 border-2 border-border">
           {user?.photoURL ? (
             <img src={user.photoURL} alt={user.displayName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
           ) : (

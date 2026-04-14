@@ -9,15 +9,47 @@ import { AnimatedPage, AnimatedList, AnimatedListItem } from '@/components/anima
 import { useUiStore } from '@/stores/uiStore';
 import { useApi } from '@/hooks/useApi';
 
-// Current day abbreviation for highlighting today's bar in the chart
 const TODAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date().getDay()];
+
+// Pipeline step generation
+export type StepStatus = 'pending' | 'active' | 'done' | 'error';
+const PIPELINE_DEFINITIONS = [
+  { step: 1, label: 'Classify',    description: 'Analyzing content type' },
+  { step: 2, label: 'Generate',    description: 'Creating with Gemini AI' },
+  { step: 3, label: 'Save',        description: 'Writing to vault' },
+];
+const STATUS_TO_ACTIVE_STEP: Record<string, number> = {
+  QUEUED:      1,
+  CLASSIFYING: 1,
+  GENERATING:  2,
+  WRITING:     3,
+  DONE:        5,
+  ERROR:       -1,
+};
+
+function buildPipelineSteps(taskStatus: string) {
+  if (!taskStatus) return PIPELINE_DEFINITIONS.map(d => ({ ...d, status: 'pending' as StepStatus }));
+  const activeStep = STATUS_TO_ACTIVE_STEP[taskStatus] ?? 1;
+  const isError = taskStatus === 'ERROR';
+  const isDone = taskStatus === 'DONE';
+
+  return PIPELINE_DEFINITIONS.map(d => {
+    let status: StepStatus = 'pending';
+    if (isDone) status = 'done';
+    else if (isError && d.step <= activeStep) status = d.step === activeStep ? 'error' : 'done';
+    else if (d.step < activeStep) status = 'done';
+    else if (d.step === activeStep) status = 'active';
+    return { ...d, status };
+  });
+}
+
 // Custom tooltip for Recharts
 const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: { value: number | string }[]; label?: string }) => {
   if (active && payload && payload.length) {
     return (
-      <div className="bg-elevated border border-white/10 p-3 rounded-lg shadow-xl">
+      <div className="bg-surface border border-border p-3 rounded-lg shadow-xl">
         <p className="text-text-secondary text-xs mb-1">{label}</p>
-        <p className="text-amber font-bold">{payload[0].value} emails processed</p>
+        <p className="text-emerald font-bold">{payload[0].value} emails processed</p>
       </div>
     );
   }
@@ -38,14 +70,14 @@ export function DashboardPage() {
       <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
         {activeTasks?.map((task) => (
           <div key={task.id} className="mb-6 last:mb-0">
-            <div className="bg-background rounded-lg border border-white/[0.04] p-3 mb-3">
+            <div className="bg-background rounded-lg border border-border p-3 mb-3">
               <p className="text-xs text-text-secondary truncate">Now processing:</p>
               <p className="text-sm font-medium text-text-primary truncate mt-0.5" title={task.sourceSubject}>
                 {task.sourceSubject}
               </p>
             </div>
             {/* Show pipeline for the first active task */}
-            <TaskPipeline steps={[]} />
+            <TaskPipeline steps={buildPipelineSteps(task.status)} />
           </div>
         ))}
       </div>
@@ -73,9 +105,9 @@ export function DashboardPage() {
               transition={{ duration: 0.4, delay: 0.4 }}
               className="lg:col-span-2 card flex flex-col overflow-hidden h-[400px]"
             >
-              <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between bg-surface">
+              <div className="px-5 py-4 border-b border-border flex items-center justify-between bg-surface">
                 <h2 className="text-sm font-semibold text-text-primary">Recent Processing Activity</h2>
-                <button className="text-xs text-amber font-medium hover:underline">View All</button>
+                <button className="text-xs text-emerald font-medium hover:underline">View All</button>
               </div>
               <div className="flex-1 overflow-y-auto p-2">
                 {activity && activity.length > 0 ? (
@@ -125,7 +157,7 @@ export function DashboardPage() {
                       {weeklyData?.map((entry, index) => (
                         <Cell
                           key={`cell-${index}`}
-                          fill={entry.day === TODAY ? '#F5C842' : 'rgba(99,102,241,0.6)'}
+                          fill={entry.day === TODAY ? '#10B981' : '#3F3F46'}
                         />
                       ))}
                     </Bar>

@@ -25,7 +25,7 @@ function Dialog({ open, onClose, output }: { open: boolean; onClose: () => void;
         className="relative w-full max-w-4xl max-h-[85vh] bg-surface border border-white/[0.08] shadow-2xl rounded-2xl flex flex-col overflow-hidden z-10"
       >
         {/* Header */}
-        <div className="px-6 py-4 flex items-center justify-between gap-4 border-b border-white/[0.08] bg-elevated/50">
+        <div className="px-6 py-4 flex items-center justify-between gap-4 border-b border-white/[0.08] bg-surface/50">
           <div className="flex-1 min-w-0 pr-4">
             <h2 className="text-lg font-bold text-text-primary line-clamp-2 leading-tight pr-4">{output.title}</h2>
             <p className="text-xs text-text-secondary mt-1">Preview generated content</p>
@@ -37,7 +37,7 @@ function Dialog({ open, onClose, output }: { open: boolean; onClose: () => void;
             >
               <Download size={14} /> Download DOCX
             </button>
-            <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10 text-text-secondary transition-colors">
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-border text-text-secondary transition-colors">
               <X size={18} />
             </button>
           </div>
@@ -73,7 +73,7 @@ export function VaultPage() {
         <div className="max-w-6xl mx-auto space-y-6">
           
           {/* Toolbar */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-surface p-4 rounded-xl border border-white/[0.06]">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-surface p-4 rounded-xl border border-border">
             <div className="relative w-full sm:w-72">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
               <input 
@@ -93,7 +93,7 @@ export function VaultPage() {
                   onClick={() => setActiveFilter(f)}
                   className={cn(
                     'px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap',
-                    activeFilter === f ? 'bg-white text-black' : 'hover:bg-elevated text-text-secondary hover:text-text-primary'
+                    activeFilter === f ? 'bg-white text-black' : 'hover:bg-surface text-text-secondary hover:text-text-primary'
                   )}
                 >
                   {f === 'ALL' ? 'All Types' : f}

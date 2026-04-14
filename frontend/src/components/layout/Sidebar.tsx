@@ -91,15 +91,15 @@ export function Sidebar() {
 
   return (
     <motion.aside
-      animate={{ width: sidebarOpen ? 240 : 64 }}
+      animate={{ width: sidebarOpen ? 250 : 64 }}
       transition={{ duration: 0.25, ease: 'easeInOut' }}
-      className="relative flex flex-col h-screen bg-surface border-r border-white/[0.06] flex-shrink-0 overflow-hidden"
-      style={{ minWidth: sidebarOpen ? 240 : 64 }}
+      className="relative flex flex-col h-screen bg-surface border-r border-border flex-shrink-0 overflow-hidden"
+      style={{ minWidth: sidebarOpen ? 250 : 64 }}
     >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b border-white/[0.06]">
-        <div className="w-8 h-8 rounded-lg bg-amber flex items-center justify-center flex-shrink-0">
-          <span className="text-[#0A0A0F] font-bold text-sm">M</span>
+      <div className="flex items-center gap-3 px-5 py-5 border-b border-border">
+        <div className="w-10 h-10 flex items-center justify-center flex-shrink-0">
+          <img src="/logo.png" alt="Milo Logo" className="w-full h-full object-contain" />
         </div>
         <AnimatePresence>
           {sidebarOpen && (
@@ -110,19 +110,19 @@ export function Sidebar() {
               transition={{ duration: 0.2 }}
               className="font-bold text-lg tracking-tight text-text-primary"
             >
-              Miro<span className="text-amber">.</span>
+              Milo<span className="text-emerald">.</span>
             </motion.span>
           )}
         </AnimatePresence>
       </div>
 
       {/* User */}
-      <div className="flex items-center gap-3 px-4 py-4 border-b border-white/[0.06]">
-        <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 border-2 border-white/10">
+      <div className="flex items-center gap-3 px-4 py-4 border-b border-border">
+        <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 border-2 border-border">
           {user?.photoURL ? (
             <img src={user.photoURL} alt={user.displayName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
           ) : (
-            <div className="w-full h-full bg-indigo flex items-center justify-center text-xs font-semibold text-white">
+            <div className="w-full h-full bg-primary flex items-center justify-center text-xs font-semibold text-white">
               {user?.displayName?.charAt(0) ?? 'U'}
             </div>
           )}
@@ -157,7 +157,7 @@ export function Sidebar() {
               cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 relative',
                 isActive
-                  ? 'bg-amber-muted text-amber'
+                  ? 'bg-emerald-muted text-emerald'
                   : 'text-text-secondary hover:text-text-primary hover:bg-elevated',
                 !sidebarOpen && 'justify-center px-2'
               )
@@ -165,7 +165,7 @@ export function Sidebar() {
           >
             {({ isActive }) => (
               <>
-                <Icon size={18} className={cn('flex-shrink-0', isActive && 'text-amber')} />
+                <Icon size={18} className={cn('flex-shrink-0', isActive && 'text-emerald')} />
                 <AnimatePresence>
                   {sidebarOpen && (
                     <motion.span
@@ -185,14 +185,14 @@ export function Sidebar() {
       </nav>
 
       {/* Sync button */}
-      <div className="px-3 pb-5 pt-2 border-t border-white/[0.06] space-y-2">
+      <div className="px-3 pb-5 pt-2 border-t border-border space-y-2">
         <button
           onClick={handleSync}
           disabled={syncState === 'syncing'}
           className={cn(
             'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all',
-            syncState === 'idle'     && 'bg-elevated text-text-secondary hover:text-text-primary hover:bg-white/[0.06]',
-            syncState === 'syncing'  && 'bg-amber-muted text-amber amber-glow cursor-wait',
+            syncState === 'idle'     && 'bg-elevated text-text-secondary hover:text-text-primary hover:bg-border',
+            syncState === 'syncing'  && 'bg-emerald-muted text-emerald shadow-card cursor-wait',
             syncState === 'done'     && 'bg-success/10 text-success',
             syncState === 'error'    && 'bg-danger/10 text-danger',
             syncState === 'no-token' && 'bg-yellow-500/10 text-yellow-400',
@@ -230,9 +230,9 @@ export function Sidebar() {
 
         {/* Progress bar shown while syncing — matches the 90s API timeout */}
         {syncState === 'syncing' && sidebarOpen && (
-          <div className="h-1 rounded-full bg-elevated overflow-hidden">
+          <div className="h-1 rounded-full bg-border overflow-hidden">
             <motion.div
-              className="h-full bg-amber rounded-full"
+              className="h-full bg-emerald rounded-full"
               initial={{ width: '2%' }}
               animate={{ width: '92%' }}
               transition={{ duration: 85, ease: 'easeOut' }}
@@ -244,7 +244,7 @@ export function Sidebar() {
       {/* Collapse toggle */}
       <button
         onClick={toggleSidebar}
-        className="absolute -right-3 top-[72px] w-6 h-6 rounded-full bg-elevated border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors z-10"
+        className="absolute -right-3 top-[72px] w-6 h-6 rounded-full bg-surface border border-border flex items-center justify-center hover:bg-border transition-colors z-10 box-shadow-card text-text-secondary"
       >
         {sidebarOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
       </button>

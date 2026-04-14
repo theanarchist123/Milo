@@ -58,7 +58,7 @@ export function ClassroomPage() {
                 <div className="card bg-surface p-6">
                   
                   {/* Tabs */}
-                  <div className="flex items-center gap-6 border-b border-white/[0.06] mb-6">
+                  <div className="flex items-center gap-6 border-b border-border mb-6">
                     {[
                       { id: 'COURSEWORK', label: 'Assignments' },
                       { id: 'MATERIAL', label: 'Study Materials' },
@@ -69,12 +69,12 @@ export function ClassroomPage() {
                         onClick={() => setActiveTab(tab.id as 'COURSEWORK' | 'MATERIAL' | 'ANNOUNCEMENT')}
                         className={cn(
                           'pb-3 text-sm font-medium transition-colors relative',
-                          activeTab === tab.id ? 'text-amber' : 'text-text-secondary hover:text-text-primary'
+                          activeTab === tab.id ? 'text-emerald' : 'text-text-secondary hover:text-text-primary'
                         )}
                       >
                         {tab.label}
                         {activeTab === tab.id && (
-                          <motion.div layoutId="courseTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber" />
+                          <motion.div layoutId="courseTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald" />
                         )}
                       </button>
                     ))}
@@ -106,13 +106,17 @@ export function ClassroomPage() {
 function CourseItemRow({ item }: { item: CourseItem }) {
   const navigate = useNavigate();
   const [processing, setProcessing] = useState(false);
+  const [showRollInput, setShowRollInput] = useState(false);
+  const [rollNumber, setRollNumber] = useState('');
 
-  const handleProcess = async () => {
+  const kickOffProcessing = async (roll: string) => {
     if (processing) return;
     setProcessing(true);
+    setShowRollInput(false);
     try {
       const { apiClient } = await import('@/lib/apiClient');
-      const res = await apiClient.post(`/process/classroom/${item.id}`, {}, { timeout: 120_000 });
+      const params = roll ? `?roll_number=${encodeURIComponent(roll)}` : '';
+      const res = await apiClient.post(`/process/classroom/${item.id}${params}`, {}, { timeout: 180_000 });
       const taskId = res.data?.id;
       if (taskId) {
         navigate(`/process/${taskId}`);
@@ -124,10 +128,20 @@ function CourseItemRow({ item }: { item: CourseItem }) {
     }
   };
 
+  const handleProcessClick = () => {
+    // check if description has a spreadsheet/doc link — if so, ask for roll number
+    const hasLink = /https?:\/\/docs\.google\.com|https?:\/\/drive\.google\.com/.test(item.description || '');
+    if (hasLink) {
+      setShowRollInput(true);
+    } else {
+      kickOffProcessing('');
+    }
+  };
+
   return (
-    <div className="flex gap-4 p-4 rounded-xl border border-white/[0.06] bg-elevated hover:border-white/10 transition-colors group">
-      <div className="w-10 h-10 rounded-lg bg-surface flex items-center justify-center flex-shrink-0 border border-white/[0.06]">
-        {item.type === 'COURSEWORK' ? <FileText size={18} className="text-amber" /> :
+    <div className="flex gap-4 p-4 rounded-xl border border-border bg-surface hover:border-border transition-colors group">
+      <div className="w-10 h-10 rounded-lg bg-surface flex items-center justify-center flex-shrink-0 border border-border">
+        {item.type === 'COURSEWORK' ? <FileText size={18} className="text-emerald" /> :
          item.type === 'MATERIAL' ? <UploadCloud size={18} className="text-indigo" /> :
          <MessageSquare size={18} className="text-teal" />}
       </div>
@@ -149,7 +163,7 @@ function CourseItemRow({ item }: { item: CourseItem }) {
         {item.attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-4">
             {item.attachments.map(att => (
-              <span key={att.attachmentId} className="inline-flex items-center gap-1.5 px-2 py-1 rounded border border-white/10 bg-surface text-xs text-text-secondary">
+              <span key={att.attachmentId} className="inline-flex items-center gap-1.5 px-2 py-1 rounded border border-border bg-surface text-xs text-text-secondary">
                 <FileText size={10} />
                 {att.filename}
               </span>
@@ -157,17 +171,50 @@ function CourseItemRow({ item }: { item: CourseItem }) {
           </div>
         )}
 
-        <div className="mt-4 pt-4 border-t border-white/[0.06] flex items-center justify-between">
+        {/* Roll-number prompt (shown only for items with attached spreadsheet/doc) */}
+        {showRollInput && (
+          <div className="mt-3 p-3 rounded-lg bg-emerald/5 border border-emerald/20 flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+            <div className="flex-1">
+              <p className="text-xs text-emerald font-semibold mb-1">📋 Spreadsheet detected — enter your Roll Number</p>
+              <p className="text-xs text-text-tertiary">So Miro can find YOUR specific problem assignment from the sheet.</p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <input
+                type="text"
+                placeholder="e.g. 21"
+                value={rollNumber}
+                onChange={e => setRollNumber(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && kickOffProcessing(rollNumber)}
+                className="input h-8 w-24 text-sm text-center"
+                autoFocus
+              />
+              <button
+                onClick={() => kickOffProcessing(rollNumber)}
+                className="btn btn-primary py-1 px-3 text-xs"
+              >
+                Go ▶
+              </button>
+              <button
+                onClick={() => kickOffProcessing('')}
+                className="btn btn-ghost py-1 px-2 text-xs"
+              >
+                Skip
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
             <span className={cn('text-xs font-medium px-2 py-0.5 rounded', 
               item.status === 'done' ? 'text-success bg-success/10' :
-              item.status === 'classified' ? 'text-amber bg-amber/10' : 'text-text-tertiary bg-white/[0.06]'
+              item.status === 'classified' ? 'text-emerald bg-emerald/10' : 'text-text-tertiary bg-white/[0.06]'
             )}>
               {item.status.toUpperCase()}
             </span>
             
             <button 
-              onClick={handleProcess}
-              disabled={processing}
+              onClick={handleProcessClick}
+              disabled={processing || showRollInput}
               className="btn btn-secondary py-1.5 px-3 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
             >
               {processing ? (

@@ -32,7 +32,7 @@ export function PageWrapper({
 
           {/* Optional right panel */}
           {rightPanel && (
-            <aside className="w-[300px] flex-shrink-0 border-l border-white/[0.06] overflow-y-auto p-4 bg-surface">
+            <aside className="w-[300px] flex-shrink-0 border-l border-border overflow-y-auto p-4 bg-surface">
               {rightPanel}
             </aside>
           )}

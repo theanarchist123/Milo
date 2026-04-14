@@ -80,6 +80,28 @@ export function useApi() {
     }
   }, [lastSyncTimestamp, fetchAll]);
 
+  // Live-poll active tasks every 5s so the dashboard updates during autopilot processing
+  useEffect(() => {
+    const pollActiveTasks = async () => {
+      if (!auth.currentUser) return;
+      try {
+        const res = await apiClient.get('/dashboard/stats');
+        const newActive: Task[] = res.data.active || [];
+        setActiveTasks(newActive);
+        // If tasks just finished, also refresh stats + activity
+        if (newActive.length === 0) {
+          setStats(res.data.stats);
+          setActivity(res.data.activity || []);
+        }
+      } catch {
+        // silent fail — don't log on every poll
+      }
+    };
+
+    const interval = setInterval(pollActiveTasks, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Lazily fetch course items when a course is expanded
   const fetchCourseItems = useCallback(
     async (courseId: string) => {

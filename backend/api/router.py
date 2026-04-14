@@ -4,11 +4,13 @@ from sqlalchemy import func, cast, Date
 from typing import List, Dict
 import datetime as dt
 import uuid
+import logging
 
 from database import get_db
-from models import User, EmailRecord, Course, CourseItem, Task as DBTask, GeneratedOutput
+from models import User, EmailRecord, Course, CourseItem, Task as DBTask, GeneratedOutput, Notification
 from api.auth import get_current_user
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ─── Dashboard ────────────────────────────────────────────────────────
@@ -21,8 +23,11 @@ def get_dashboard_stats(db: Session = Depends(get_db), current_user: User = Depe
     assignments = db.query(GeneratedOutput).filter(GeneratedOutput.owner_id == current_user.id, GeneratedOutput.type == 'ASSIGNMENT').count()
     materials = db.query(GeneratedOutput).filter(GeneratedOutput.owner_id == current_user.id, GeneratedOutput.type != 'ASSIGNMENT').count()
 
-    # Get active tasks
-    active = db.query(DBTask).filter(DBTask.owner_id == current_user.id, DBTask.status.in_(["RUNNING", "PENDING"])).all()
+    # Get active tasks — include all in-progress states from both manual and autopilot processing
+    active = db.query(DBTask).filter(
+        DBTask.owner_id == current_user.id,
+        DBTask.status.in_(["RUNNING", "PENDING", "CLASSIFYING", "GENERATING", "WRITING"])
+    ).order_by(DBTask.started_at.desc()).all()
 
     # Get recent activity
     activity_recs = db.query(EmailRecord).filter(EmailRecord.owner_id == current_user.id).order_by(EmailRecord.date.desc()).limit(6).all()
@@ -405,6 +410,7 @@ def process_email(
 @router.post("/process/classroom/{item_id}")
 def process_classroom_item(
     item_id: str,
+    roll_number: str = "",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -425,6 +431,15 @@ def process_classroom_item(
         "ANNOUNCEMENT": "NOTES",
     }
     output_type = type_map.get(item.type, "SUMMARY")
+    
+    # Override: if description contains external links (Google Doc/Sheet/Doc),
+    # treat as ASSIGNMENT regardless of stored type so the AI reads the link
+    import re as _re
+    desc_text = item.description or ""
+    if _re.search(r'https?://docs\.google\.com', desc_text) or \
+       _re.search(r'https?://drive\.google\.com', desc_text):
+        output_type = "ASSIGNMENT"
+        logger.info(f"[Router] Overriding output_type to ASSIGNMENT — external link found in '{item.title[:40]}'")
 
     # Create task
     task = DBTask(
@@ -462,6 +477,7 @@ def process_classroom_item(
             title=item.title or "Classroom Item",
             content=content,
             output_type=output_type,
+            roll_number=roll_number,
         )
 
         if "error" in generated:
@@ -502,3 +518,56 @@ def process_classroom_item(
         task.current_step = f"Failed: {str(e)[:200]}"
         db.commit()
         return _serialize_task(task)
+
+# ─── Settings & Notifications & Autopilot ──────────────────────────────────────────
+
+@router.get("/settings")
+def get_settings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return {
+        "auto_process_enabled": current_user.auto_process_enabled,
+        "roll_number": current_user.roll_number,
+        "auto_process_interval_minutes": current_user.auto_process_interval_minutes
+    }
+
+from pydantic import BaseModel
+class SettingsUpdate(BaseModel):
+    auto_process_enabled: bool
+    roll_number: str
+    auto_process_interval_minutes: int
+
+@router.post("/settings")
+def update_settings(settings: SettingsUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    current_user.auto_process_enabled = settings.auto_process_enabled
+    current_user.roll_number = settings.roll_number
+    current_user.auto_process_interval_minutes = settings.auto_process_interval_minutes
+    db.commit()
+    return {"status": "ok"}
+
+@router.post("/process/trigger-autopilot")
+def trigger_autopilot(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Manually trigger the autopilot cycle for testing"""
+    from services.auto_processor import run_auto_processing_cycle
+    # Note: the real cycle runs for all enabled users, but for manual test we just trigger it
+    import threading
+    t = threading.Thread(target=run_auto_processing_cycle)
+    t.start()
+    return {"status": "ok", "message": "Autopilot cycle started"}
+
+@router.get("/notifications")
+def get_notifications(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    notifications = db.query(Notification).filter(Notification.owner_id == current_user.id).order_by(Notification.created_at.desc()).limit(20).all()
+    return [{
+        "id": n.id,
+        "title": n.title,
+        "body": n.body,
+        "type": n.type,
+        "sourceUrl": n.source_url,
+        "isRead": n.is_read,
+        "createdAt": n.created_at.isoformat()
+    } for n in notifications]
+
+@router.post("/notifications/read-all")
+def mark_all_read(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    db.query(Notification).filter(Notification.owner_id == current_user.id).update({Notification.is_read: True})
+    db.commit()
+    return {"status": "ok"}

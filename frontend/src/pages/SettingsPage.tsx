@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { User, Shield, CheckCircle2, XCircle, Server, Key, LogOut, Loader2, RefreshCw } from 'lucide-react';
 import { PageWrapper } from '@/components/layout/PageWrapper';
@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { apiClient } from '@/lib/apiClient';
+import { toastEmitter } from '@/components/features/ToastNotification';
 
 export function SettingsPage() {
   const { user, accessToken } = useAuthStore();
@@ -23,6 +24,68 @@ export function SettingsPage() {
     drive: { connected: boolean; error: string | null };
   }>(null);
   const [connLoading, setConnLoading] = useState(false);
+
+  // Autopilot settings state
+  const [autoProcess, setAutoProcess] = useState(false);
+  const [rollNumber, setRollNumber] = useState('');
+  const [interval, setIntervalVal] = useState(15);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [triggering, setTriggering] = useState(false);
+
+  const fetchSettings = async () => {
+    try {
+      const res = await apiClient.get('/settings');
+      setAutoProcess(res.data.auto_process_enabled);
+      setRollNumber(res.data.roll_number || '');
+      setIntervalVal(res.data.auto_process_interval_minutes || 15);
+    } catch (e) {
+      console.warn('Could not fetch settings', e);
+    }
+  };
+
+  const saveSettings = async (updates: any) => {
+    try {
+      setSettingsLoading(true);
+      const payload = {
+        auto_process_enabled: updates.autoProcess !== undefined ? updates.autoProcess : autoProcess,
+        roll_number: updates.rollNumber !== undefined ? updates.rollNumber : rollNumber,
+        auto_process_interval_minutes: updates.interval !== undefined ? updates.interval : interval
+      };
+      await apiClient.post('/settings', payload);
+      toastEmitter.emit({
+        title: 'Settings Saved',
+        body: 'Your Autopilot preferences have been updated.',
+        type: 'SUCCESS'
+      });
+    } catch (e) {
+      toastEmitter.emit({ title: 'Error', body: 'Failed to save settings.', type: 'ERROR' });
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const triggerAutopilot = async () => {
+    setTriggering(true);
+    try {
+      await apiClient.post('/process/trigger-autopilot');
+      toastEmitter.emit({
+        title: 'Autopilot Started',
+        body: 'Background processing cycle has been manually triggered.',
+        type: 'INFO'
+      });
+    } catch (e) {
+      toastEmitter.emit({ title: 'Error', body: 'Failed to trigger autopilot.', type: 'ERROR' });
+    } finally {
+      setTriggering(false);
+    }
+  };
+
+  // Run on mount
+  useEffect(() => {
+    if (user) {
+      fetchSettings();
+    }
+  }, [user]);
 
   const fetchConnStatus = async () => {
     setConnLoading(true);
@@ -69,7 +132,7 @@ export function SettingsPage() {
                   className={cn(
                     'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap',
                     activeTab === tab.id 
-                      ? 'bg-elevated text-amber' 
+                      ? 'bg-surface text-emerald' 
                       : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]'
                   )}
                 >
@@ -103,7 +166,7 @@ export function SettingsPage() {
                     </div>
                   </div>
                   
-                  <div className="flex justify-end pt-6 border-t border-white/[0.06]">
+                  <div className="flex justify-end pt-6 border-t border-border">
                     <button onClick={handleSignOut} className="btn btn-danger">
                       <LogOut size={16} /> Sign Out
                     </button>
@@ -118,37 +181,84 @@ export function SettingsPage() {
                   <div className="py-4 first:pt-0 pb-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h4 className="text-sm font-semibold text-white">Auto Sync</h4>
-                        <p className="text-xs text-text-tertiary mt-1">Automatically fetch emails and classroom updates</p>
+                        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                          Miro Autopilot <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald/10 text-emerald">BETA</span>
+                        </h4>
+                        <p className="text-xs text-text-tertiary mt-1">Automatically process new assignments in the background</p>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" className="sr-only peer" defaultChecked />
-                        <div className="w-11 h-6 bg-elevated rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber"></div>
+                        <input 
+                          type="checkbox" 
+                          className="sr-only peer" 
+                          checked={autoProcess}
+                          onChange={(e) => {
+                            setAutoProcess(e.target.checked);
+                            saveSettings({ autoProcess: e.target.checked });
+                          }}
+                        />
+                        <div className="w-11 h-6 bg-surface rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald"></div>
                       </label>
                     </div>
                   </div>
 
-                  <div className="py-6 border-white/[0.06]">
-                    <div className="flex items-center justify-between">
+                  <div className="py-6 border-border">
+                    <div className="flex items-start justify-between">
                       <div>
-                        <h4 className="text-sm font-semibold text-white">Sync Frequency</h4>
-                        <p className="text-xs text-text-tertiary mt-1">How often Miro checks for new documents</p>
+                        <h4 className="text-sm font-semibold text-white">Your Roll Number</h4>
+                        <p className="text-xs text-text-tertiary mt-1 max-w-[250px]">Required to auto-generate the correct problem solution from Google Sheets assignments.</p>
                       </div>
-                      <select className="bg-elevated border border-white/10 text-sm rounded-lg px-3 py-2 text-white outline-none focus:border-amber cursor-pointer">
-                        <option>Every hour</option>
-                        <option>Twice a day</option>
-                        <option>Daily</option>
-                      </select>
+                      <div className="flex gap-2">
+                        <input 
+                          type="text" 
+                          className="bg-surface border border-border text-sm rounded-lg px-3 py-2 text-white outline-none focus:border-emerald w-24 text-center"
+                          placeholder="e.g. 21"
+                          value={rollNumber}
+                          onChange={(e) => setRollNumber(e.target.value)}
+                          onBlur={() => saveSettings({ rollNumber })}
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="py-6 border-white/[0.06]">
+                  <div className="py-6 border-border">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <h4 className="text-sm font-semibold text-white">Sync Interval</h4>
+                        <p className="text-xs text-text-tertiary mt-1">How often Autopilot checks Classroom & Gmail</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <select 
+                          className="bg-surface border border-border text-sm rounded-lg px-3 py-2 text-white outline-none focus:border-emerald cursor-pointer"
+                          value={interval}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setIntervalVal(val);
+                            saveSettings({ interval: val });
+                          }}
+                        >
+                          <option value={5}>Every 5 minutes</option>
+                          <option value={15}>Every 15 minutes</option>
+                          <option value={30}>Every 30 minutes</option>
+                          <option value={60}>Every hour</option>
+                        </select>
+                        <button 
+                          onClick={triggerAutopilot}
+                          disabled={triggering || !autoProcess}
+                          className="btn btn-secondary px-3 py-1.5 text-xs whitespace-nowrap"
+                        >
+                          {triggering ? <Loader2 size={14} className="animate-spin" /> : 'Run Now'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="py-6 border-border">
                     <div className="flex items-center justify-between">
                       <div>
                         <h4 className="text-sm font-semibold text-white">Default Output Format</h4>
                         <p className="text-xs text-text-tertiary mt-1">Which file types to generate</p>
                       </div>
-                      <select className="bg-elevated border border-white/10 text-sm rounded-lg px-3 py-2 text-white outline-none focus:border-amber cursor-pointer">
+                      <select className="bg-surface border border-border text-sm rounded-lg px-3 py-2 text-white outline-none focus:border-emerald cursor-pointer">
                         <option>Both (DOCX + PDF)</option>
                         <option>PDF only</option>
                         <option>DOCX only</option>
@@ -205,7 +315,7 @@ export function SettingsPage() {
                       <div className="flex items-center gap-3">
                         <div className={cn(
                           'w-8 h-8 rounded-lg flex items-center justify-center',
-                          !connStatus ? 'bg-elevated' :
+                          !connStatus ? 'bg-surface' :
                           svc.status?.connected ? 'bg-success/10' : 'bg-danger/10'
                         )}>
                           {!connStatus ? (
@@ -223,7 +333,7 @@ export function SettingsPage() {
                       </div>
                       <span className={cn(
                         'badge text-xs',
-                        !connStatus ? 'bg-elevated text-text-secondary' :
+                        !connStatus ? 'bg-surface text-text-secondary' :
                         svc.status?.connected ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'
                       )}>
                         {!connStatus ? 'Not tested' : svc.status?.connected ? 'Connected ✓' : 'Error'}

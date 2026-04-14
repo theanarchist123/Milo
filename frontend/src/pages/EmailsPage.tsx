@@ -36,9 +36,9 @@ export function EmailsPage() {
         <div className="h-full flex gap-1 -m-6 px-6 pb-6">
           
           {/* Left: Email List (Master) */}
-          <div className="w-[40%] min-w-[320px] flex flex-col h-full bg-surface border-r border-white/[0.06] -ml-6 border-y-0 relative z-10">
+          <div className="w-[40%] min-w-[320px] flex flex-col h-full bg-surface border-r border-border -ml-6 border-y-0 relative z-10">
             {/* Toolbar */}
-            <div className="p-4 border-b border-white/[0.06] sticky top-0 bg-surface/95 backdrop-blur z-20">
+            <div className="p-4 border-b border-border sticky top-0 bg-surface/95 backdrop-blur z-20">
               <div className="relative mb-4">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
                 <input 
@@ -57,7 +57,7 @@ export function EmailsPage() {
                     onClick={() => setActiveTab(tab)}
                     className={cn(
                       'px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors',
-                      activeTab === tab ? 'bg-white text-black' : 'bg-elevated text-text-secondary hover:text-text-primary'
+                      activeTab === tab ? 'bg-white text-black' : 'bg-surface text-text-secondary hover:text-text-primary'
                     )}
                   >
                     {tab}
@@ -138,15 +138,15 @@ export function EmailsPage() {
 
                   {/* AI Classification Card */}
                   {selectedEmail.classification && (
-                    <div className="bg-amber-muted border border-amber/20 rounded-xl p-4 mb-6 flex items-start gap-4">
-                      <div className="w-8 h-8 rounded-full bg-amber/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <Filter size={14} className="text-amber" />
+                    <div className="bg-emerald-muted border border-emerald/20 rounded-xl p-4 mb-6 flex items-start gap-4">
+                      <div className="w-8 h-8 rounded-full bg-emerald/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <Filter size={14} className="text-emerald" />
                       </div>
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <span className="text-sm font-semibold text-text-primary">AI Classification</span>
                           <span className={cn('badge text-[10px]', 
-                            selectedEmail.classification.type === 'ASSIGNMENT' ? 'badge-amber' : 
+                            selectedEmail.classification.type === 'ASSIGNMENT' ? 'badge-emerald' : 
                             selectedEmail.classification.type === 'NOTES' ? 'badge-indigo' : 'badge-teal'
                           )}>
                             {selectedEmail.classification.type}
@@ -169,8 +169,8 @@ export function EmailsPage() {
                       <h3 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary mb-3">Attachments ({selectedEmail.attachments.length})</h3>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         {selectedEmail.attachments.map(att => (
-                          <div key={att.attachmentId} className="flex items-center gap-3 p-3 rounded-lg border border-white/[0.06] bg-surface hover:border-white/20 transition-all cursor-pointer group">
-                            <div className="w-8 h-8 rounded bg-elevated flex items-center justify-center flex-shrink-0 group-hover:bg-white/10">
+                          <div key={att.attachmentId} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-surface hover:border-white/20 transition-all cursor-pointer group">
+                            <div className="w-8 h-8 rounded bg-surface flex items-center justify-center flex-shrink-0 group-hover:bg-border">
                               <span className="text-xs font-bold text-text-secondary">{att.filename.split('.').pop()?.toUpperCase()}</span>
                             </div>
                             <div className="flex-1 min-w-0">
@@ -183,7 +183,7 @@ export function EmailsPage() {
                     </div>
                   )}
 
-                  <hr className="border-white/[0.06] my-6" />
+                  <hr className="border-border my-6" />
 
                   {/* Body */}
                   <div className="prose prose-invert max-w-none text-text-secondary text-sm md:text-base leading-relaxed">

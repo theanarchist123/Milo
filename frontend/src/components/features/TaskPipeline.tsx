@@ -19,14 +19,14 @@ interface TaskPipelineProps {
 
 const STATUS_ICON: Record<StepStatus, React.ReactNode> = {
   pending: <Circle size={18} className="text-text-tertiary" />,
-  active:  <Loader2 size={18} className="text-amber spinner" />,
+  active:  <Loader2 size={18} className="text-emerald spinner" />,
   done:    <CheckCircle2 size={18} className="text-success" />,
   error:   <XCircle size={18} className="text-danger" />,
 };
 
 const CARD_CLASS: Record<StepStatus, string> = {
-  pending: 'border-white/[0.06] bg-surface',
-  active:  'border-amber bg-amber-muted shadow-[0_0_20px_rgba(245,200,66,0.12)]',
+  pending: 'border-border bg-surface',
+  active:  'border-emerald bg-emerald-muted shadow-[0_0_20px_rgba(245,200,66,0.12)]',
   done:    'border-success/30 bg-surface',
   error:   'border-danger/40 bg-red-500/5',
 };
@@ -79,7 +79,7 @@ export function TaskPipeline({ steps, onRetry }: TaskPipelineProps) {
               <div>
                 <p className={cn(
                   'text-sm font-semibold',
-                  step.status === 'active' ? 'text-amber' :
+                  step.status === 'active' ? 'text-emerald' :
                   step.status === 'done'   ? 'text-success' :
                   step.status === 'error'  ? 'text-danger' :
                   'text-text-secondary'
@@ -91,8 +91,8 @@ export function TaskPipeline({ steps, onRetry }: TaskPipelineProps) {
 
               {step.status === 'active' && (
                 <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber dot-pulse" />
-                  <span className="text-xs text-amber font-medium">Processing</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald dot-pulse" />
+                  <span className="text-xs text-emerald font-medium">Processing</span>
                 </div>
               )}
               {step.status === 'done' && (

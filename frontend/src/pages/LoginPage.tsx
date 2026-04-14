@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Bot, CheckCircle2, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
+import { Bot, CheckCircle2, ShieldCheck, AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
 import { AnimatedPage, FloatingCard, AnimatedCounter } from '@/components/animated';
@@ -10,7 +10,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { apiClient } from '@/lib/apiClient';
 
 export function LoginPage() {
-  const { url, loading } = useUnsplash('university library dark');
+  const { url, loading } = useUnsplash('abstract architecture white clean');
   const navigate = useNavigate();
   const { setUser, setAccessToken } = useAuthStore();
   const [signingIn, setSigningIn] = useState(false);
@@ -20,16 +20,11 @@ export function LoginPage() {
     setError(null);
     setSigningIn(true);
     try {
-      // Real Firebase Google Sign-In with OAuth scopes (Gmail, Classroom, Drive)
       const result = await signInWithPopup(auth, googleProvider);
       const firebaseUser = result.user;
-
-      // Extract the Google OAuth2 access token from the credential
-      // This token lets the backend call Gmail, Classroom, and Drive APIs on behalf of the user
       const credential = GoogleAuthProvider.credentialFromResult(result);
       const oauthAccessToken = credential?.accessToken ?? null;
 
-      // Set user in Zustand store — onAuthStateChanged in useAuth.ts will also fire
       setUser({
         uid: firebaseUser.uid,
         email: firebaseUser.email ?? '',
@@ -37,10 +32,8 @@ export function LoginPage() {
         photoURL: firebaseUser.photoURL,
       });
 
-      // Store the OAuth access token so components can access it
       setAccessToken(oauthAccessToken);
 
-      // Send the OAuth access token to the backend so it can call Google APIs
       if (oauthAccessToken) {
         try {
           const idToken = await firebaseUser.getIdToken();
@@ -53,7 +46,6 @@ export function LoginPage() {
             headers: { Authorization: `Bearer ${idToken}` },
           });
         } catch (backendErr) {
-          // Non-fatal — user can still use the app, sync will prompt re-auth if token missing
           console.warn('Could not store token in backend (non-fatal):', backendErr);
         }
       }
@@ -63,7 +55,6 @@ export function LoginPage() {
       console.error('Google sign-in error:', err);
       const message =
         err instanceof Error ? err.message : 'Sign-in failed. Please try again.';
-      // Don't show the popup-closed error as a real error
       if (!(message.includes('popup-closed') || message.includes('cancelled'))) {
         setError('Sign-in failed. Please check your connection and try again.');
       }
@@ -75,17 +66,16 @@ export function LoginPage() {
   return (
     <AnimatedPage className="flex min-h-screen bg-background">
       {/* Left side: Visuals */}
-      <div className="hidden lg:flex w-[60%] relative overflow-hidden flex-col justify-center p-20">
+      <div className="hidden lg:flex w-[55%] relative overflow-hidden flex-col justify-center p-20 border-r border-border bg-surface">
         {/* Background */}
         <motion.div
           initial={{ opacity: 0 }}
-          animate={{ opacity: loading ? 0 : 1 }}
+          animate={{ opacity: loading ? 0 : 0.4 }}
           transition={{ duration: 1 }}
           className="absolute inset-0"
         >
-          <img src={url ?? ''} alt="Library" className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-background/80 backdrop-blur-[2px]" />
-          <div className="img-overlay" />
+          <img src={url ?? ''} alt="Architecture" className="w-full h-full object-cover grayscale opacity-30" />
+          <div className="absolute inset-0 bg-gradient-to-r from-surface to-transparent" />
         </motion.div>
 
         {/* Content */}
@@ -96,14 +86,12 @@ export function LoginPage() {
             transition={{ duration: 0.6, ease: 'easeOut' }}
           >
             <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-amber flex items-center justify-center">
-                <Bot size={24} className="text-[#0A0A0F]" />
-              </div>
-              <span className="text-xl font-bold tracking-tight">Miro.</span>
+              <img src="/logo.png" alt="Milo Logo" className="w-10 h-10 object-contain" />
+              <span className="text-xl font-bold tracking-tight text-white">Milo AI.</span>
             </div>
-            <h1 className="text-5xl font-bold text-white leading-tight mb-8">
+            <h1 className="text-5xl font-bold text-white leading-tight mb-8 tracking-tight">
               Your academic life, <br />
-              <span className="text-amber">automated.</span>
+              <span className="text-emerald">automated.</span>
             </h1>
 
             <div className="space-y-5">
@@ -116,10 +104,10 @@ export function LoginPage() {
                   key={i}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.4, delay: 0.4 + i * 0.15 }}
+                  transition={{ duration: 0.4, delay: 0.2 + i * 0.1 }}
                   className="flex items-center gap-4 text-text-secondary text-lg"
                 >
-                  <CheckCircle2 size={24} className="text-success" />
+                  <CheckCircle2 size={24} className="text-emerald shrink-0" />
                   {text}
                 </motion.div>
               ))}
@@ -127,23 +115,23 @@ export function LoginPage() {
           </motion.div>
 
           <div className="mt-16 flex gap-6">
-            <FloatingCard delay={0} className="bg-surface/60 backdrop-blur-md border-white/[0.08] w-64">
+            <FloatingCard delay={0} className="bg-surface shadow-card border-border w-64">
               <div className="flex items-center gap-3 mb-3">
-                <span className="badge badge-amber">ASSIGNMENT</span>
+                <span className="badge badge-emerald">ASSIGNMENT</span>
                 <span className="text-xs text-text-tertiary">Just now</span>
               </div>
-              <p className="text-sm font-medium text-white">Wave Mechanics Lab Report</p>
-              <div className="h-1.5 w-full bg-elevated rounded-full mt-4 overflow-hidden">
-                <div className="h-full bg-amber w-[100%]" />
+              <p className="text-sm font-bold text-white">Wave Mechanics Lab Report</p>
+              <div className="h-1.5 w-full bg-border rounded-full mt-4 overflow-hidden">
+                <div className="h-full bg-emerald w-[100%]" />
               </div>
             </FloatingCard>
             
-            <FloatingCard delay={1.5} className="bg-surface/60 backdrop-blur-md border-white/[0.08] w-64 mt-8">
+            <FloatingCard delay={1.5} className="bg-surface shadow-card border-border w-64 mt-8">
               <div className="flex items-center gap-3 mb-3">
                 <span className="badge badge-indigo">SUMMARY</span>
                 <span className="text-xs text-text-tertiary">5m ago</span>
               </div>
-              <p className="text-sm font-medium text-white">Database Normalization</p>
+              <p className="text-sm font-bold text-white">Database Normalization</p>
               <div className="text-2xl font-bold text-white mt-2">
                 <AnimatedCounter target={12} /> <span className="text-sm font-normal text-text-secondary">Q&A pairs</span>
               </div>
@@ -157,20 +145,23 @@ export function LoginPage() {
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5, delay: 0.2 }}
-        className="w-full lg:w-[40%] flex flex-col items-center justify-center p-12 bg-surface shadow-2xl z-20 relative"
+        className="w-full lg:w-[45%] flex flex-col justify-center p-12 bg-background relative"
       >
-        <div className="w-full max-w-sm">
+        <button onClick={() => navigate('/')} className="absolute top-8 left-8 text-text-tertiary hover:text-text-primary flex items-center gap-2 text-sm font-medium transition-colors">
+          <ArrowLeft size={16} /> Back to Home
+        </button>
+
+        <div className="w-full max-w-sm mx-auto">
           <div className="text-center mb-10">
-            <h2 className="text-3xl font-bold text-white mb-2">Welcome to Miro</h2>
+            <h2 className="text-3xl font-bold text-white mb-2">Welcome to Milo</h2>
             <p className="text-text-secondary">Sign in with your university Google account</p>
           </div>
 
-          {/* Error message */}
           {error && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="flex items-center gap-3 p-3 mb-4 rounded-lg bg-danger/10 border border-danger/20 text-danger text-sm"
+              className="flex items-center gap-3 p-3 mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm"
             >
               <AlertCircle size={16} className="flex-shrink-0" />
               {error}
@@ -180,7 +171,7 @@ export function LoginPage() {
           <button
             onClick={handleGoogleSignIn}
             disabled={signingIn}
-            className="w-full flex items-center justify-center gap-3 bg-white text-black font-semibold py-3.5 px-4 rounded-xl hover:bg-gray-100 transition-all active:scale-[0.98] amber-glow mb-8 hover:shadow-[0_0_30px_rgba(245,200,66,0.3)] border-2 border-transparent hover:border-amber disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:border-transparent disabled:hover:bg-white"
+            className="w-full flex items-center justify-center gap-3 bg-white text-black font-semibold py-3.5 px-4 rounded-xl hover:bg-gray-50 transition-all active:scale-[0.98] shadow-card hover:-translate-y-1 mb-8 border border-border hover:border-emerald disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {signingIn ? (
               <Loader2 size={20} className="animate-spin text-gray-500" />
@@ -196,17 +187,17 @@ export function LoginPage() {
           </button>
 
           <div className="space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">Miro needs access to:</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">Milo needs access to:</h3>
             <div className="space-y-3">
               {[
-                { icon: <ShieldCheck size={16} className="text-amber" />, text: 'Gmail Read Access', desc: 'To fetch incoming assignments' },
+                { icon: <ShieldCheck size={16} className="text-emerald" />, text: 'Gmail Read Access', desc: 'To fetch incoming assignments' },
                 { icon: <ShieldCheck size={16} className="text-indigo" />, text: 'Classroom Access', desc: 'To read coursework & materials' },
-                { icon: <ShieldCheck size={16} className="text-success" />, text: 'Drive Access', desc: 'To download attached files' },
+                { icon: <ShieldCheck size={16} className="text-emerald" />, text: 'Drive Access', desc: 'To download attached files' },
               ].map((item, i) => (
                 <div key={i} className="flex gap-3">
                   <div className="mt-0.5">{item.icon}</div>
                   <div>
-                    <p className="text-sm text-text-primary">{item.text}</p>
+                    <p className="text-sm font-medium text-white">{item.text}</p>
                     <p className="text-xs text-text-tertiary">{item.desc}</p>
                   </div>
                 </div>

@@ -20,7 +20,9 @@ export const toastEmitter = {
   },
   subscribe(fn: (t: ToastEvent) => void) {
     this.listeners.add(fn);
-    return () => this.listeners.delete(fn);
+    return () => {
+      this.listeners.delete(fn);
+    };
   }
 };
 

@@ -4,6 +4,7 @@ import { Bell, Check, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '@/lib/apiClient';
 import { useAuthStore } from '@/stores/authStore';
+import { toastEmitter } from '@/components/features/ToastNotification';
 
 interface Notification {
   id: string;
@@ -18,8 +19,9 @@ interface Notification {
 export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const { user } = useAuthStore();
+  const { user, accessToken } = useAuthStore();
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const lastUnreadCount = useRef<number>(0);
   const navigate = useNavigate();
 
   const loadNotifications = async () => {
@@ -36,17 +38,28 @@ export function NotificationBell() {
     loadNotifications();
 
     // Set up SSE connection
-    const token = localStorage.getItem('miro_auth_token');
-    const evtSource = new EventSource(`http://localhost:8000/api/notifications/stream?token=${token}`);
+    if (!accessToken) {
+      return;
+    }
+    
+    const evtSource = new EventSource(`http://localhost:8000/api/notifications/stream?token=${accessToken}`);
     
     evtSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         if (typeof data.unreadCount === 'number') {
-           // We just received a ping. Best to reload notifications fully if we suspect a change.
-           // However, to keep it simple and efficient, we will just reload every time we get a ping 
-           // IF the user has focus or we specifically see a count change via SSE logic.
-           // For this MVP, we load on mount, and let the SSE connection trigger a refresh.
+           // Compare safely using refs
+           if (data.unreadCount > lastUnreadCount.current && data.latest) {
+               toastEmitter.emit({
+                 title: data.latest.title,
+                 body: data.latest.body,
+                 type: data.latest.type,
+                 sourceUrl: data.latest.sourceUrl // optional mapping
+               });
+           }
+           lastUnreadCount.current = data.unreadCount;
+
+           // Always trigger a reload if there is any ping to stay fresh
            loadNotifications();
         }
       } catch (e) {}
@@ -109,7 +122,7 @@ export function NotificationBell() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="absolute right-0 mt-2 w-80 max-h-[85vh] overflow-y-auto bg-surface border border-border rounded-xl shadow-2xl z-50 flex flex-col"
+            className="absolute right-0 mt-2 w-80 max-h-[85vh] overflow-y-auto bg-surface border border-border rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-[999] flex flex-col"
           >
             <div className="flex items-center justify-between p-3 border-b border-border sticky top-0 bg-surface/95 backdrop-blur z-10">
               <h3 className="text-sm font-semibold text-text-primary">Notifications</h3>

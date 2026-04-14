@@ -14,6 +14,7 @@ class User(Base):
     auto_process_enabled = Column(Boolean, default=False)
     roll_number = Column(String, nullable=True)
     auto_process_interval_minutes = Column(Integer, default=15)
+    last_sync_time = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     emails = relationship("EmailRecord", back_populates="owner")

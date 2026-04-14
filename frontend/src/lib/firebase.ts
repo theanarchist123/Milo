@@ -19,10 +19,12 @@ export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 // Gmail
 googleProvider.addScope('https://www.googleapis.com/auth/gmail.readonly');
+googleProvider.addScope('https://www.googleapis.com/auth/gmail.send');
 // Classroom — need all three; announcements needs its own scope
 googleProvider.addScope('https://www.googleapis.com/auth/classroom.courses.readonly');
 googleProvider.addScope('https://www.googleapis.com/auth/classroom.coursework.me.readonly');
 googleProvider.addScope('https://www.googleapis.com/auth/classroom.coursework.students.readonly');
+googleProvider.addScope('https://www.googleapis.com/auth/classroom.courseworkmaterials.readonly');
 googleProvider.addScope('https://www.googleapis.com/auth/classroom.announcements.readonly');
 // Drive — for downloading attachments
 googleProvider.addScope('https://www.googleapis.com/auth/drive.readonly');

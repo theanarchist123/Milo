@@ -2,6 +2,7 @@ import logging
 import base64
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.header import Header
 from sqlalchemy.orm import Session
 from models import Notification, User
 from google.oauth2.credentials import Credentials
@@ -34,20 +35,19 @@ def send_email_notification(user: User, subject: str, message_html: str):
         return
 
     try:
+        import datetime
         creds = Credentials(
             token=user.google_access_token,
-            refresh_token=user.google_refresh_token,
-            client_id=None, # Only strictly needed if we are force-refreshing
-            client_secret=None,
-            token_uri="https://oauth2.googleapis.com/token",
+            expiry=datetime.datetime.utcnow() + datetime.timedelta(minutes=55),
         )
         # Using Gmail API v1 to send email on user's behalf
-        service = build('gmail', 'v1', credentials=creds)
+        service = build('gmail', 'v1', credentials=creds, cache_discovery=False)
 
         message = MIMEMultipart('alternative')
         message['to'] = user.email
         message['from'] = "Miro AI Autopilot <" + user.email + ">"
-        message['subject'] = subject
+        # Wrap subject in Header with utf-8 to prevent "folded header contains newline" crash
+        message['subject'] = Header(subject, 'utf-8').encode()
 
         mime_text = MIMEText(message_html, 'html')
         message.attach(mime_text)

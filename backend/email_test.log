@@ -1,0 +1,3 @@
+INFO:googleapiclient.discovery_cache:file_cache is only supported with oauth2client<4.0.0
+INFO:google_auth_httplib2:Refreshing credentials due to a 401 response. Attempt 1/2.
+ERROR:services.notification_service:Failed to send email to ultronlegacy1234@gmail.com: The credentials do not contain the necessary fields need to refresh the access token. You must specify refresh_token, token_uri, client_id, and client_secret.

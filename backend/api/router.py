@@ -386,7 +386,7 @@ def process_email(
             task_id=task.id,
             type=generated["type"],
             title=generated["title"],
-            preview_text=generated["text"][:5000],
+            preview_text=generated["text"],
             file_path=file_path,
             created_at=dt.datetime.utcnow(),
         )
@@ -500,7 +500,7 @@ def process_classroom_item(
             task_id=task.id,
             type=generated["type"],
             title=generated["title"],
-            preview_text=generated["text"][:5000],
+            preview_text=generated["text"],
             file_path=file_path,
             created_at=dt.datetime.utcnow(),
         )
@@ -546,6 +546,10 @@ def update_settings(settings: SettingsUpdate, db: Session = Depends(get_db), cur
 @router.post("/process/trigger-autopilot")
 def trigger_autopilot(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Manually trigger the autopilot cycle for testing"""
+    # Force bypass the cooldown timer
+    current_user.last_sync_time = None
+    db.commit()
+
     from services.auto_processor import run_auto_processing_cycle
     # Note: the real cycle runs for all enabled users, but for manual test we just trigger it
     import threading

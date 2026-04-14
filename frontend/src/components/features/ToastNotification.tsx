@@ -32,10 +32,10 @@ export function ToastContainer() {
     return toastEmitter.subscribe((toast) => {
       setToasts(prev => [...prev, toast]);
       
-      // Auto-dismiss after 6 seconds
+      // Auto-dismiss after 10 seconds (increased from 6s for better readability)
       setTimeout(() => {
         setToasts(prev => prev.filter(t => t.id !== toast.id));
-      }, 6000);
+      }, 10000);
     });
   }, []);
 

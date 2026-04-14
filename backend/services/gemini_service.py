@@ -1,11 +1,9 @@
 """
-Gemini AI Service — classification and content generation using gemini-3-flash-preview.
+Ollama API Service — classification and content generation.
 
-Uses the new `google.genai` SDK (google-genai) instead of the deprecated `google.generativeai`.
-
-This module provides:
-  - classify_content(): Classifies email/classroom text into academic categories
-  - generate_output():  Generates assignments, summaries, or Q&A from academic content
+Replaces Gemini with Ollama Cloud API due to Gemini quota failures.
+Endpoints: https://ollama.com/v1/chat/completions (OpenAI compatible)
+Model: deepseek-v3.1:671b
 """
 import os
 import json
@@ -16,22 +14,61 @@ import time
 from bs4 import BeautifulSoup
 from typing import Optional
 from services.browser_scraper import scrape_url as browser_scrape_url
-
-from google import genai
 from dotenv import load_dotenv
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# ─── Configure Gemini ─────────────────────────────────────────────────────────
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY is not set in .env")
+# ─── Configure Ollama API ───────────────────────────────────────────────────
+OLLAMA_API_KEY = "79a6ab116ce8470bab92bbc2f14db403.9Y3wlTGZDqQTqc7gsajmdv55"
+OLLAMA_ENDPOINT = "https://ollama.com/v1/chat/completions"
+MODEL_NAME = "deepseek-v3.1:671b"
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+def _call_ollama(prompt: str, json_format: bool = False, max_tokens: int = 8192) -> str:
+    """Wrapper to call Ollama Chat Completions"""
+    headers = {
+        "Authorization": f"Bearer {OLLAMA_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": MODEL_NAME,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": max_tokens,
+        "temperature": 0.3
+    }
+    
+    if json_format:
+        payload["response_format"] = {"type": "json_object"}
 
-MODEL_NAME = "gemini-3-flash-preview"
-
+    # Retry logic for network or 429 errors (ghost connection lockouts can take up to 90s to clear)
+    for attempt in range(7):
+        try:
+            # Increase timeout to 300s (5min) for large documents on high-quality models
+            response = requests.post(OLLAMA_ENDPOINT, headers=headers, json=payload, timeout=300)
+            response.raise_for_status()
+            data = response.json()
+            if "choices" in data and len(data["choices"]) > 0:
+                return data["choices"][0]["message"]["content"]
+            else:
+                raise ValueError(f"Invalid API response: {data}")
+                
+        except requests.exceptions.RequestException as e:
+            err_msg = str(e)
+            if hasattr(e, 'response') and e.response is not None:
+                err_msg += f" | Body: {e.response.text}"
+            
+            if attempt == 6:
+                logger.error(f"[Ollama] Final attempt failed: {err_msg}")
+                raise Exception(f"Ollama API Error: {err_msg}")
+                
+            delay = 2 ** (attempt + 1)
+            logger.warning(f"[Ollama] Request failed, retrying in {delay}s... ({err_msg})")
+            time.sleep(delay)
+            
+    raise Exception("Ollama API failed after 7 attempts")
 
 # ─── Classification ───────────────────────────────────────────────────────────
 
@@ -68,10 +105,6 @@ BODY:
 
 
 def classify_content(subject: str, body: str, sender: str = "Unknown") -> dict:
-    """
-    Classify academic content using Gemini.
-    Returns a classification dict matching the frontend Classification interface.
-    """
     try:
         prompt = CLASSIFY_PROMPT.format(
             sender=sender,
@@ -79,29 +112,8 @@ def classify_content(subject: str, body: str, sender: str = "Unknown") -> dict:
             body=body[:3000],
         )
         
-        # Retry logic for 429 Resource Exhausted
-        response = None
-        for attempt in range(5):
-            try:
-                response = client.models.generate_content(
-                    model=MODEL_NAME,
-                    contents=prompt,
-                )
-                break
-            except Exception as e:
-                msg = str(e)
-                if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                    delay = 2 ** (attempt + 1)
-                    logger.warning(f"[Gemini] 429 Rate limit during classification. Sleeping {delay}s...")
-                    time.sleep(delay)
-                    if attempt == 4:
-                        raise
-                else:
-                    raise
-                    
-        text = response.text.strip()
+        text = _call_ollama(prompt, json_format=True, max_tokens=1000).strip()
 
-        # Strip markdown fences if present
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
         if text.endswith("```"):
@@ -109,22 +121,11 @@ def classify_content(subject: str, body: str, sender: str = "Unknown") -> dict:
         text = text.strip()
 
         result = json.loads(text)
-        logger.info(f"[Gemini] Classified as {result.get('type')}: {result.get('summaryOneLine', '')[:60]}")
+        logger.info(f"[Ollama] Classified as {result.get('type')}: {result.get('summaryOneLine', '')[:60]}")
         return result
 
-    except json.JSONDecodeError as e:
-        logger.warning(f"[Gemini] Classification JSON parse failed: {e}")
-        return {
-            "type": "UNCLASSIFIED",
-            "subjectArea": "Unknown",
-            "priority": "LOW",
-            "hasDeadline": False,
-            "deadlineText": None,
-            "actionRequired": False,
-            "summaryOneLine": f"Could not classify: {subject[:60]}",
-        }
     except Exception as e:
-        logger.error(f"[Gemini] Classification error: {e}")
+        logger.error(f"[Ollama] Classification error: {e}")
         return {
             "type": "UNCLASSIFIED",
             "subjectArea": "Unknown",
@@ -246,60 +247,19 @@ Write the organized study notes below:""",
 
 
 def generate_output(title: str, content: str, output_type: str = "SUMMARY", roll_number: str = "") -> dict:
-    """
-    Generate academic content using Gemini.
-
-    Args:
-        title: Title of the source material
-        content: The body text to process
-        output_type: One of ASSIGNMENT, SUMMARY, QA, NOTES
-        roll_number: Student's roll number (used for ASSIGNMENT to find specific problem in spreadsheets)
-
-    Returns:
-        {"text": "<generated content>", "type": "<output_type>", "title": "<generated title>"}
-    """
     prompt_template = GENERATE_PROMPTS.get(output_type, GENERATE_PROMPTS["SUMMARY"])
 
     try:
-        # Pre-process content to extract any URLs
         expanded_content = _expand_urls_in_content(content)
         
         from collections import defaultdict
-        
-        # format_map with defaultdict so other templates don't crash on {roll_number}
         fmt_vars = defaultdict(str)
         fmt_vars['title'] = title
         fmt_vars['content'] = expanded_content[:20000]
         fmt_vars['roll_number'] = roll_number if roll_number else "NOT PROVIDED — generate document for all problems or the main topic"
         prompt = prompt_template.format_map(fmt_vars)
         
-        config = genai.types.GenerateContentConfig(
-            max_output_tokens=8192,
-            temperature=0.4,
-        )
-        
-        # Retry logic for 429 Resource Exhausted
-        response = None
-        for attempt in range(5):
-            try:
-                response = client.models.generate_content(
-                    model=MODEL_NAME,
-                    contents=prompt,
-                    config=config,
-                )
-                break
-            except Exception as e:
-                msg = str(e)
-                if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                    delay = 2 ** (attempt + 1)
-                    logger.warning(f"[Gemini] 429 Rate limit during generation. Sleeping {delay}s...")
-                    time.sleep(delay)
-                    if attempt == 4:
-                        raise
-                else:
-                    raise
-                    
-        generated_text = response.text.strip()
+        generated_text = _call_ollama(prompt, json_format=False, max_tokens=8192).strip()
 
         type_labels = {
             "ASSIGNMENT": "Assignment Solution",
@@ -309,7 +269,7 @@ def generate_output(title: str, content: str, output_type: str = "SUMMARY", roll
         }
         output_title = f"{type_labels.get(output_type, 'Output')}: {title[:80]}"
 
-        logger.info(f"[Gemini] Generated {output_type} for '{title[:40]}' — {len(generated_text)} chars")
+        logger.info(f"[Ollama] Generated {output_type} for '{title[:40]}' — {len(generated_text)} chars")
 
         return {
             "text": generated_text,
@@ -318,7 +278,7 @@ def generate_output(title: str, content: str, output_type: str = "SUMMARY", roll
         }
 
     except Exception as e:
-        logger.error(f"[Gemini] Generation error: {e}")
+        logger.error(f"[Ollama] Generation error: {e}")
         return {
             "text": f"Generation failed: {str(e)}",
             "type": output_type,
@@ -328,9 +288,6 @@ def generate_output(title: str, content: str, output_type: str = "SUMMARY", roll
 
 
 def determine_output_type(classification: Optional[dict], source_type: str = "email") -> str:
-    """
-    Determine what type of output to generate based on the classification.
-    """
     if classification:
         ctype = classification.get("type", "").upper()
         if ctype == "ASSIGNMENT":
@@ -345,38 +302,45 @@ def determine_output_type(classification: Optional[dict], source_type: str = "em
     return "SUMMARY"
 
 def _expand_urls_in_content(content: str) -> str:
-    """
-    Finds URLs in content, opens a real headless browser via Playwright to read all content
-    (including multi-tab Google Sheets), and appends it so the AI can read them.
-    """
     urls = set(re.findall(r'https?://\S+', content))
-    expanded_text = []
+    if not urls:
+        return content
 
     logger.info(f"[URLExpander] Scanning content for URLs... found {len(urls)}: {list(urls)[:3]}")
 
-    for url in urls:
+    import concurrent.futures
+    
+    def _fetch_url(url: str):
         url = url.rstrip(")'\",.&")
         try:
-            if 'docs.google.com/' in url or 'drive.google.com/' in url:
-                # Use real browser to get ALL sheet tabs / full doc content
-                logger.info(f"[URLExpander] Opening browser for Google URL: {url[:80]}")
-                text = browser_scrape_url(url, timeout_ms=25000)
+            if 'drive.google.com/file' in url:
+                return None
+            elif 'docs.google.com/' in url or 'drive.google.com/' in url:
+                logger.info(f"[URLExpander] Parallel Browser Scrape: {url[:60]}...")
+                text = browser_scrape_url(url, timeout_ms=15000)
                 if text:
-                    expanded_text.append(
-                        f"\n\n[Content fetched via browser from {url}:\n{text[:8000]}\n]"
-                    )
-                else:
-                    logger.warning(f"[URLExpander] Browser returned empty for {url}")
+                    return f"\n\n[Content fetched via browser from {url}:\n{text[:8000]}\n]"
             else:
-                # Regular webpage — use requests + BeautifulSoup
-                r = requests.get(url, timeout=8)
+                logger.info(f"[URLExpander] Parallel Requests Scrape: {url[:60]}...")
+                r = requests.get(url, timeout=10)
                 if r.status_code == 200 and 'text/html' in r.headers.get('Content-Type', ''):
+                    from bs4 import BeautifulSoup
                     soup = BeautifulSoup(r.content, 'html.parser')
                     text = soup.get_text(separator=' ', strip=True)
                     if text:
-                        expanded_text.append(f"\n\n[Content attached from Webpage {url}:\n{text[:4000]}\n]")
+                        return f"\n\n[Content attached from Webpage {url}:\n{text[:4000]}\n]"
         except Exception as e:
-            logger.warning(f"[URLExpander] Could not fetch url {url}: {e}")
+            logger.warning(f"[URLExpander] Parallel fetch error for {url}: {e}")
+        return None
+
+    expanded_text = []
+    # Use max 4 workers to avoid overwhelming local browser instance/network
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        future_to_url = {executor.submit(_fetch_url, url): url for url in urls}
+        for future in concurrent.futures.as_completed(future_to_url):
+            res = future.result()
+            if res:
+                expanded_text.append(res)
 
     if expanded_text:
         logger.info(f"[URLExpander] Injecting {len(expanded_text)} fetched attachment(s) into AI context")

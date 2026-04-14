@@ -1,11 +1,13 @@
 import { motion } from 'framer-motion';
-import { Mail, FileText, PenTool, BookOpen } from 'lucide-react';
+import { Mail, FileText, PenTool, BookOpen, CheckCircle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { PageWrapper } from '@/components/layout/PageWrapper';
 import { StatCard } from '@/components/features/StatCard';
 import { ActivityRow } from '@/components/features/ActivityRow';
 import { TaskPipeline } from '@/components/features/TaskPipeline';
 import { AnimatedPage, AnimatedList, AnimatedListItem } from '@/components/animated';
+import { useAuthStore } from '@/stores/authStore';
+import { toastEmitter } from '@/components/features/ToastNotification';
 import { useUiStore } from '@/stores/uiStore';
 import { useApi } from '@/hooks/useApi';
 
@@ -76,7 +78,6 @@ export function DashboardPage() {
                 {task.sourceSubject}
               </p>
             </div>
-            {/* Show pipeline for the first active task */}
             <TaskPipeline steps={buildPipelineSteps(task.status)} />
           </div>
         ))}

@@ -1,0 +1,2 @@
+WARNING:googleapiclient.http:Encountered 403 Forbidden with reason "insufficientPermissions"
+ERROR:services.notification_service:Failed to send email to 2023.nikhil.kadam@ves.ac.in: <HttpError 403 when requesting https://gmail.googleapis.com/gmail/v1/users/me/messages/send?alt=json returned "Request had insufficient authentication scopes.". Details: "[{'message': 'Insufficient Permission', 'domain': 'global', 'reason': 'insufficientPermissions'}]">

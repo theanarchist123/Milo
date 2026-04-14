@@ -72,43 +72,54 @@ export function VaultPage() {
       <PageWrapper headerTitle="The Vault" headerSubtitle="Every academic document Miro has generated for you">
         <div className="max-w-6xl mx-auto space-y-6">
           
-          {/* Toolbar */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-surface p-4 rounded-xl border border-border">
-            <div className="relative w-full sm:w-72">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
-              <input 
-                type="text" 
-                placeholder="Search documents…" 
-                className="input pl-9 h-9 text-sm"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+          {/* Unified Vault Workspace Card */}
+          <div className="bg-surface rounded-[24px] border border-border p-6 shadow-2xl relative overflow-hidden">
+            {/* Absolute ambient glow */}
+            <div className="absolute top-0 right-0 w-96 h-96 bg-brand-primary/[0.03] rounded-full blur-[100px] pointer-events-none" />
+
+            {/* Toolbar */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-8">
+              <div className="relative w-full sm:w-72 relative z-10">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
+                <input 
+                  type="text" 
+                  placeholder="Search your documents…" 
+                  className="input pl-9 h-10 text-sm bg-background/50 border-white/5 focus:border-brand-primary/50 transition-colors rounded-xl"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto relative z-10 p-1 bg-background/40 rounded-xl border border-white/5">
+                <Filter size={14} className="text-text-tertiary mx-2 shrink-0" />
+                {['ALL', 'ASSIGNMENT', 'SUMMARY', 'QA', 'EXPERIMENT'].map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setActiveFilter(f)}
+                    className={cn(
+                      'px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all whitespace-nowrap',
+                      activeFilter === f 
+                        ? 'bg-brand-primary text-white shadow-lg' 
+                        : 'hover:bg-white/5 text-text-secondary hover:text-text-primary'
+                    )}
+                  >
+                    {f === 'ALL' ? 'All Types' : f}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto">
-              <Filter size={14} className="text-text-tertiary mr-1" />
-              {['ALL', 'ASSIGNMENT', 'SUMMARY', 'QA', 'EXPERIMENT'].map(f => (
-                <button
-                  key={f}
-                  onClick={() => setActiveFilter(f)}
-                  className={cn(
-                    'px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap',
-                    activeFilter === f ? 'bg-white text-black' : 'hover:bg-surface text-text-secondary hover:text-text-primary'
-                  )}
-                >
-                  {f === 'ALL' ? 'All Types' : f}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Grid */}
-          {filtered.length === 0 ? (
-            <div className="p-20 text-center text-text-tertiary">
-              <FileText size={48} className="mx-auto mb-4 opacity-20" />
-              <p>No documents found matching your filter.</p>
-            </div>
-          ) : (
+            {/* Grid */}
+            <div className="relative z-10">
+              {filtered.length === 0 ? (
+                <div className="py-32 flex flex-col items-center justify-center text-center">
+                  <div className="w-20 h-20 mb-6 rounded-full bg-white/[0.02] flex items-center justify-center border border-white/[0.05]">
+                    <FileText size={32} className="text-text-tertiary opacity-50" />
+                  </div>
+                  <h3 className="text-lg font-medium text-text-primary mb-2">No documents found</h3>
+                  <p className="text-sm text-text-secondary">Try adjusting your filters or generating a new task.</p>
+                </div>
+              ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filtered.map((output, i) => (
                 <OutputCard
@@ -119,8 +130,9 @@ export function VaultPage() {
                 />
               ))}
             </div>
-          )}
-
+              )}
+            </div>
+          </div>
         </div>
       </PageWrapper>
 

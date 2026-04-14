@@ -31,6 +31,7 @@ def run_migrations():
         "ALTER TABLE users ADD COLUMN auto_process_enabled BOOLEAN DEFAULT 0",
         "ALTER TABLE users ADD COLUMN roll_number VARCHAR",
         "ALTER TABLE users ADD COLUMN auto_process_interval_minutes INTEGER DEFAULT 15",
+        "ALTER TABLE users ADD COLUMN last_sync_time DATETIME",
         # course_items table additions
         "ALTER TABLE course_items ADD COLUMN owner_id VARCHAR REFERENCES users(id)",
         "ALTER TABLE course_items ADD COLUMN auto_processed BOOLEAN DEFAULT 0",
@@ -66,8 +67,8 @@ async def lifespan(app: FastAPI):
     
     # We will register the job dynamically or from a service module
     from services.auto_processor import run_auto_processing_cycle
-    # Run every 10 min by default, but individual user logic checks their own interval
-    scheduler.add_job(run_auto_processing_cycle, 'interval', minutes=10, id='auto_processor_job')
+    # Run every 5 min by default to support the shortest UI interval. Individual user logic checks their own interval.
+    scheduler.add_job(run_auto_processing_cycle, 'interval', minutes=5, id='auto_processor_job')
     
     yield
     # Shutdown logic

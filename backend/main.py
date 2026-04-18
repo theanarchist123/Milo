@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
-from database import engine, Base
+from database import engine, Base, _is_sqlite
 from api.router import router as api_router
 from api.auth import router as auth_router
 from api.sse import router as sse_router
@@ -14,6 +14,9 @@ from contextlib import asynccontextmanager
 
 logger = logging.getLogger(__name__)
 
+# ─── Vercel detection ─────────────────────────────────────────────────────────
+IS_VERCEL = bool(os.getenv("VERCEL"))
+
 
 def run_migrations():
     """
@@ -21,6 +24,9 @@ def run_migrations():
     Adds any missing columns to existing tables without dropping data.
     SQLite supports ADD COLUMN but raises OperationalError if the column already
     exists — we catch that silently so this is safe to run on every startup.
+
+    NOTE: This is skipped on Postgres/Vercel where schema is managed by
+    create_all() which handles missing columns natively via metadata reflection.
     """
     missing_columns = [
         # users table additions
@@ -48,22 +54,24 @@ def run_migrations():
                 pass  # Column already exists — safe to skip
 
 
-# Create all tables (new tables only — won’t touch existing ones)
+# Create all tables (new tables only — won't touch existing ones)
 Base.metadata.create_all(bind=engine)
-# Add any missing columns to already-existing tables
-run_migrations()
 
-# Ensure the media directory exists for file storage
-# NOTE: uvicorn is run from d:\miro_ai\backend so paths are relative to that
-os.makedirs("media/outputs", exist_ok=True)
+# SQLite-only additive migrations (Postgres tables are created correctly by create_all)
+if _is_sqlite:
+    run_migrations()
+
+# Ensure the media directory exists for file storage (local dev only)
+# On Vercel the filesystem is read-only/ephemeral — skip this.
+if not IS_VERCEL:
+    os.makedirs("media/outputs", exist_ok=True)
 
 scheduler = BackgroundScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # On Vercel serverless, avoid long-running background schedulers.
-    is_vercel = os.getenv("VERCEL") == "1"
-    if is_vercel:
+    if IS_VERCEL:
         logger.info("[App] Vercel runtime detected; APScheduler is disabled.")
     else:
         logger.info("[App] Starting APScheduler...")
@@ -76,7 +84,7 @@ async def lifespan(app: FastAPI):
     
     yield
     # Shutdown logic
-    if not is_vercel:
+    if not IS_VERCEL:
         logger.info("[App] Shutting down APScheduler...")
         scheduler.shutdown()
 
@@ -110,8 +118,11 @@ app.include_router(auth_router, prefix="/api/auth")
 app.include_router(sse_router, prefix="/api")
 
 # Serve the media files statically so the frontend can download generated PDFs
-app.mount("/media", StaticFiles(directory="media"), name="media")
+# On Vercel, the filesystem is ephemeral so static file serving is meaningless.
+if not IS_VERCEL:
+    app.mount("/media", StaticFiles(directory="media"), name="media")
 
 @app.get("/health")
 def health_check():
-    return {"status": "online", "db": "sqlite"}
+    db_type = "postgres" if not _is_sqlite else "sqlite"
+    return {"status": "online", "db": db_type, "runtime": "vercel" if IS_VERCEL else "local"}

@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { apiClient } from '@/lib/apiClient';
 import { useAuthStore } from '@/stores/authStore';
 import { toastEmitter } from '@/components/features/ToastNotification';
+import { auth } from '@/lib/firebase';
 
 interface Notification {
   id: string;
@@ -15,6 +16,14 @@ interface Notification {
   isRead: boolean;
   createdAt: string;
 }
+
+// Resolve the backend base URL (without /api suffix) for SSE / polling
+const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL
+  ? import.meta.env.VITE_BACKEND_URL.replace(/\/+$/, '')
+  : 'http://localhost:8000';
+
+/** Polling interval in milliseconds when SSE is unavailable */
+const POLL_INTERVAL_MS = 10_000;
 
 export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
@@ -37,35 +46,108 @@ export function NotificationBell() {
   useEffect(() => {
     loadNotifications();
 
-    // Set up SSE connection
-    if (!accessToken) {
-      return;
-    }
-    
-    const evtSource = new EventSource(`http://localhost:8000/api/notifications/stream?token=${accessToken}`);
-    
-    evtSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (typeof data.unreadCount === 'number') {
-           // Compare safely using refs
-           if (data.unreadCount > lastUnreadCount.current && data.latest) {
-               toastEmitter.emit({
-                 title: data.latest.title,
-                 body: data.latest.body,
-                 type: data.latest.type,
-                 sourceUrl: data.latest.sourceUrl // optional mapping
-               });
-           }
-           lastUnreadCount.current = data.unreadCount;
+    let evtSource: EventSource | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
 
-           // Always trigger a reload if there is any ping to stay fresh
-           loadNotifications();
+    /**
+     * Handle an incoming notification payload (same shape from both SSE and poll).
+     */
+    const handlePayload = (data: { unreadCount: number; latest: any }) => {
+      if (typeof data.unreadCount === 'number') {
+        if (data.unreadCount > lastUnreadCount.current && data.latest) {
+          toastEmitter.emit({
+            title: data.latest.title,
+            body: data.latest.body,
+            type: data.latest.type,
+            sourceUrl: data.latest.sourceUrl,
+          });
         }
-      } catch (e) {}
+        lastUnreadCount.current = data.unreadCount;
+        loadNotifications();
+      }
     };
 
-    return () => evtSource.close();
+    /**
+     * Start polling /api/notifications/poll every POLL_INTERVAL_MS.
+     * Used as a fallback when SSE is unavailable (e.g. Vercel serverless).
+     */
+    const startPolling = async () => {
+      if (cancelled) return;
+      console.info('[NotificationBell] Falling back to polling');
+
+      const poll = async () => {
+        if (cancelled) return;
+        try {
+          await auth.authStateReady();
+          const currentUser = auth.currentUser;
+          if (!currentUser) return;
+          const firebaseToken = await currentUser.getIdToken();
+          const res = await fetch(
+            `${BACKEND_BASE}/api/notifications/poll?token=${encodeURIComponent(firebaseToken)}`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            handlePayload(data);
+          }
+        } catch (err) {
+          console.warn('[NotificationBell] Poll error:', err);
+        }
+      };
+
+      // Initial poll immediately
+      await poll();
+      pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+    };
+
+    /**
+     * Try SSE first; on failure, fall back to polling.
+     */
+    const setupRealtime = async () => {
+      if (!user) return;
+      try {
+        await auth.authStateReady();
+        const currentUser = auth.currentUser;
+        if (!currentUser) return;
+        const firebaseToken = await currentUser.getIdToken();
+
+        evtSource = new EventSource(
+          `${BACKEND_BASE}/api/notifications/stream?token=${encodeURIComponent(firebaseToken)}`
+        );
+
+        evtSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            handlePayload(data);
+          } catch (e) {
+            // Ignore parse errors
+          }
+        };
+
+        evtSource.onerror = () => {
+          // SSE failed (Vercel serverless, network issue, etc.) → fall back to polling
+          console.warn('[NotificationBell] SSE error — switching to polling');
+          evtSource?.close();
+          evtSource = null;
+          startPolling();
+        };
+      } catch (err) {
+        console.error('[NotificationBell] Failed to setup SSE:', err);
+        startPolling();
+      }
+    };
+
+    setupRealtime();
+
+    return () => {
+      cancelled = true;
+      if (evtSource) {
+        evtSource.close();
+      }
+      if (pollTimer) {
+        clearInterval(pollTimer);
+      }
+    };
   }, [user]);
 
   // Click outside to close

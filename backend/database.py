@@ -11,10 +11,25 @@ load_dotenv(override=False)
 # Build the connection URL
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./miro.db")
 
-# connect_args={"check_same_thread": False} is required for SQLite in FastAPI apps
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-)
+# ─── Engine configuration ────────────────────────────────────────────────────
+# Detect the database backend from the URL to apply the right connect_args.
+_is_sqlite = SQLALCHEMY_DATABASE_URL.startswith("sqlite")
+
+if _is_sqlite:
+    # check_same_thread is required for SQLite in multi-threaded FastAPI apps
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL,
+        connect_args={"check_same_thread": False},
+    )
+else:
+    # Postgres (or any other DB) — use connection pooling best-practices
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL,
+        pool_pre_ping=True,       # verify connections before checkout
+        pool_size=5,              # keep 5 connections open
+        max_overflow=10,          # allow 10 more under load
+    )
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

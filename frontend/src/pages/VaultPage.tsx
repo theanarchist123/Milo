@@ -120,14 +120,15 @@ export function VaultPage() {
                   <p className="text-sm text-text-secondary">Try adjusting your filters or generating a new task.</p>
                 </div>
               ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 auto-rows-fr gap-5 sm:gap-6">
               {filtered.map((output, i) => (
-                <OutputCard
-                  key={output.id}
-                  output={output}
-                  index={i}
-                  onPreview={setPreviewOutput}
-                />
+                <div key={output.id} className="min-w-0">
+                  <OutputCard
+                    output={output}
+                    index={i}
+                    onPreview={setPreviewOutput}
+                  />
+                </div>
               ))}
             </div>
               )}

@@ -184,7 +184,7 @@ from services.classroom_service import fetch_classroom_for_user
 def _token_error_response(svc_name: str, err: Exception) -> dict:
     """Convert a Google API error into a user-friendly message."""
     msg = str(err)
-    if '401' in msg or 'invalid_grant' in msg or 'Token has been expired' in msg:
+    if '401' in msg or 'invalid_grant' in msg or 'Token has been expired' in msg or 'refresh the access token' in msg:
         return {"error": "token_expired", "message": "Google token expired. Please sign out and sign in again to re-grant access."}
     if '403' in msg:
         return {"error": "permission_denied", "message": f"{svc_name}: Permission denied. Ensure the API is enabled in Google Cloud Console and the OAuth scope is granted."}

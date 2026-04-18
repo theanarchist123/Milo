@@ -1,86 +1,167 @@
-# Vercel Deployment Guide (Frontend + Backend)
+# Vercel Deployment Guide — Miro AI (Frontend + Backend)
 
-This repository should be deployed as two separate Vercel projects:
-- Frontend project rooted at `frontend`
-- Backend project rooted at `backend`
+This monorepo is deployed as **two separate Vercel projects** from the same Git repository:
 
-## 1) Secrets and Local Development Setup
+| Project | Root Directory | Framework Preset | Runtime |
+|---------|---------------|-----------------|---------|
+| **Backend** | `backend` | Other | Python (Serverless) |
+| **Frontend** | `frontend` | Vite | Node.js (Static) |
 
-Use these files:
-- `frontend/.env` and `backend/.env` are safe tracked defaults
-- Put real local secrets only in:
-  - `frontend/.env.local`
-  - `backend/.env.local`
+---
 
-These local files are git-ignored and should never be committed.
+## Prerequisites
 
-## 2) Deploy Backend (FastAPI) on Vercel
+1. A [Vercel account](https://vercel.com/signup) (Hobby or Pro)
+2. An **external PostgreSQL database** (Neon, Supabase, Railway, etc.)
+   - Get a connection string like: `postgresql://user:pass@host:5432/dbname`
+3. Your Firebase project credentials
+4. Your Ollama / LLM API key
 
-1. In Vercel Dashboard, click New Project.
-2. Import this repository.
-3. Set Root Directory to `backend`.
-4. Framework preset: Other.
+---
+
+## 1) Deploy Backend (FastAPI → Vercel Serverless)
+
+### Step 1: Create Vercel Project
+1. Go to [Vercel Dashboard](https://vercel.com/dashboard) → **Add New… → Project**
+2. Import your Git repository
+3. Set **Root Directory** to `backend`
+4. Set **Framework Preset** to `Other`
 5. Build settings:
-   - Install Command: `pip install -r requirements.txt`
-   - Build Command: leave empty
-   - Output Directory: leave empty
-6. Add Environment Variables (Production, and Preview if needed):
-   - `OLLAMA_API_KEY`
-   - `OLLAMA_ENDPOINT` (optional, defaults to `https://ollama.com/v1/chat/completions`)
-   - `OLLAMA_MODEL` (optional, defaults to `deepseek-v3.1:671b`)
-   - `FIREBASE_PROJECT_ID`
-   - `FRONTEND_ORIGIN` = your frontend production URL (example: `https://your-frontend.vercel.app`)
-   - Optional: `CORS_ALLOWED_ORIGINS`
-   - Optional: `CORS_ALLOWED_ORIGIN_REGEX`
-7. Deploy.
-8. Copy backend URL (example: `https://your-backend.vercel.app`).
+   - **Build Command**: *(leave empty)*
+   - **Output Directory**: *(leave empty)*
+   - **Install Command**: `pip install -r requirements.txt`
 
-Notes:
-- `backend/vercel.json` is already included.
-- APScheduler is automatically disabled on Vercel serverless runtime.
-- SQLite on Vercel is ephemeral. For real production persistence, migrate `DATABASE_URL` to a managed Postgres database.
+### Step 2: Set Environment Variables
+Add these in the Vercel project settings → Environment Variables:
 
-## 3) Deploy Frontend (Vite + React) on Vercel
+| Variable | Value | Required |
+|----------|-------|----------|
+| `DATABASE_URL` | `postgresql://user:pass@host:5432/dbname` | ✅ |
+| `FIREBASE_PROJECT_ID` | Your Firebase project ID | ✅ |
+| `OLLAMA_API_KEY` | Your Ollama API key | ✅ |
+| `OLLAMA_ENDPOINT` | `https://ollama.com/v1/chat/completions` | ✅ |
+| `OLLAMA_MODEL` | `deepseek-v3.1:671b` | ✅ |
+| `FRONTEND_ORIGIN` | Your frontend Vercel URL (e.g. `https://miro-ai.vercel.app`) | ✅ |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins | Optional |
+| `CORS_ALLOWED_ORIGIN_REGEX` | Regex for allowed origins | Optional |
 
-1. In Vercel Dashboard, click New Project.
-2. Import same repository again as a second Vercel project.
-3. Set Root Directory to `frontend`.
-4. Framework preset: Vite.
-5. Build settings (default usually works):
-   - Install Command: `npm install`
-   - Build Command: `npm run build`
-   - Output Directory: `dist`
-6. Add Environment Variables:
-   - `VITE_BACKEND_URL` = backend URL from step 2
-   - `VITE_FIREBASE_API_KEY`
-   - `VITE_FIREBASE_AUTH_DOMAIN`
-   - `VITE_FIREBASE_PROJECT_ID`
-   - `VITE_FIREBASE_STORAGE_BUCKET`
-   - `VITE_FIREBASE_MESSAGING_SENDER_ID`
-   - `VITE_FIREBASE_APP_ID`
-   - `VITE_FIREBASE_MEASUREMENT_ID` (optional)
-   - `VITE_UNSPLASH_ACCESS_KEY` (optional)
-7. Deploy.
+> **Note:** The `VERCEL=1` environment variable is automatically set by Vercel's runtime.
 
-Notes:
-- `frontend/vercel.json` is included for SPA rewrites.
-- Firebase web config values are no longer hardcoded in source.
+### Step 3: Deploy
+Click **Deploy**. After success, copy the backend URL (e.g. `https://miro-ai-backend.vercel.app`).
 
-## 4) Final Cross-Check
+### Verify Backend
+```
+curl https://miro-ai-backend.vercel.app/health
+# Expected: {"status":"online","db":"postgres","runtime":"vercel"}
+```
 
-After both deploys:
-1. Update backend `FRONTEND_ORIGIN` with frontend deployed URL and redeploy backend.
-2. Confirm frontend `VITE_BACKEND_URL` points to backend deployed URL.
-3. Test:
+---
+
+## 2) Deploy Frontend (Vite + React → Vercel Static)
+
+### Step 1: Create Vercel Project
+1. In Vercel Dashboard → **Add New… → Project**
+2. Import the **same** Git repository again
+3. Set **Root Directory** to `frontend`
+4. Set **Framework Preset** to `Vite`
+5. Build settings (defaults should work):
+   - **Install Command**: `npm install`
+   - **Build Command**: `npm run build`
+   - **Output Directory**: `dist`
+
+### Step 2: Set Environment Variables
+
+| Variable | Value | Required |
+|----------|-------|----------|
+| `VITE_BACKEND_URL` | Backend URL from step 1 (e.g. `https://miro-ai-backend.vercel.app`) | ✅ |
+| `VITE_FIREBASE_API_KEY` | Your Firebase API key | ✅ |
+| `VITE_FIREBASE_AUTH_DOMAIN` | `your-project.firebaseapp.com` | ✅ |
+| `VITE_FIREBASE_PROJECT_ID` | Your Firebase project ID | ✅ |
+| `VITE_FIREBASE_STORAGE_BUCKET` | `your-project.appspot.com` | ✅ |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Your Firebase sender ID | ✅ |
+| `VITE_FIREBASE_APP_ID` | Your Firebase app ID | ✅ |
+| `VITE_FIREBASE_MEASUREMENT_ID` | Your Firebase measurement ID | Optional |
+| `VITE_UNSPLASH_ACCESS_KEY` | Your Unsplash access key | Optional |
+
+### Step 3: Deploy
+Click **Deploy**.
+
+---
+
+## 3) Post-Deployment Cross-Check
+
+After both projects are deployed:
+
+1. **Update backend `FRONTEND_ORIGIN`** with the frontend's deployed URL → redeploy backend
+2. **Confirm frontend `VITE_BACKEND_URL`** points to the backend URL
+3. **Add your frontend domain** to Firebase Console → Authentication → Authorized domains
+4. **Test the full flow:**
    - `GET /health` on backend
-   - Login flow from frontend
-   - Authenticated API calls from frontend to backend
+   - Login via Google on frontend
+   - Sync emails / classroom items
+   - Check notifications (polling fallback is used on Vercel)
 
-## 5) Security Checklist
+---
 
-- Do not commit real keys in source code.
-- Do not commit `.env.local` files.
-- Store production secrets only in Vercel Environment Variables.
-- Rotate any previously exposed keys (recommended):
-  - old backend GEMINI/OLLAMA key
-  - old test key
+## 4) Architecture Notes
+
+### Database
+- **Local development**: SQLite (`sqlite:///./miro.db`) — zero config
+- **Production (Vercel)**: External PostgreSQL via `DATABASE_URL`
+- The app auto-detects the DB type from the connection string
+
+### Background Processing (APScheduler)
+- **Disabled on Vercel** (serverless functions are short-lived)
+- Works normally on local / VPS deployments
+- On Vercel, auto-processing must be triggered via external cron (e.g. Vercel Cron Jobs or GitHub Actions)
+
+### Real-time Notifications
+- **Local dev**: Server-Sent Events (SSE) — persistent connection
+- **Vercel**: Automatic fallback to HTTP polling every 10 seconds
+  - SSE connections time out on serverless (max 10–60s)
+  - The frontend detects SSE failure and switches to polling transparently
+
+### File Storage
+- Generated DOCX files in `media/outputs/` are **ephemeral on Vercel**
+- For persistent file storage, consider integrating Vercel Blob or Firebase Storage
+
+---
+
+## 5) Local Development
+
+Create local env files (git-ignored) for development:
+
+```bash
+# Backend
+cp backend/.env backend/.env.local
+# Edit backend/.env.local with your real API keys
+
+# Frontend
+cp frontend/.env frontend/.env.local
+# Edit frontend/.env.local with your real Firebase keys
+```
+
+Run locally:
+```bash
+# Backend
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+
+# Frontend (separate terminal)
+cd frontend
+npm install
+npm run dev
+```
+
+---
+
+## 6) Security Checklist
+
+- [x] `.env` files contain only safe placeholder templates (no real keys)
+- [x] `.env.local` files are git-ignored
+- [ ] Production secrets are stored only in Vercel Environment Variables
+- [ ] Firebase Authorized Domains includes your Vercel frontend URL
+- [ ] Rotate any API keys previously exposed in git history (recommended)
+- [ ] CORS `FRONTEND_ORIGIN` restricts access to your frontend domain only

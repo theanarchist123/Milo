@@ -17,6 +17,9 @@ google-auth>=2.0.0
 google-auth-httplib2
 google-auth-oauthlib
 
+# PostgreSQL driver (used on Vercel / production)
+psycopg2-binary
+
 # NOTE: firebase-admin is NOT required.
 # We use google.oauth2.id_token.verify_firebase_token (part of google-auth)
 # which verifies Firebase JWTs using Google's public keys — no service account needed.

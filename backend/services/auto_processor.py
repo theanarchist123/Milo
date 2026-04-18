@@ -173,15 +173,18 @@ def _is_email_worth_processing(email: EmailRecord) -> bool:
     if email_type == "ASSIGNMENT":
         return True
 
-    # Process notes/materials only if they require action
-    if email_type == "NOTES" and action_required:
+    # Process notes/materials immediately, they are valuable study content
+    if email_type == "NOTES":
         return True
 
-    # Process announcements only if HIGH priority with action required
-    if email_type == "ANNOUNCEMENT" and priority == "HIGH" and action_required:
+    # Process all announcements (skip low priority marketing, but keep regular ones)
+    if email_type == "ANNOUNCEMENT" and priority != "LOW":
         return True
 
-    # Skip UNCLASSIFIED, LOW priority, and non-actionable content
+    # Fall-back to keyword heuristic for UNCLASSIFIED
+    if email_type == "UNCLASSIFIED":
+        return _looks_academic(email)
+
     return False
 
 

@@ -99,7 +99,7 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                 cw_response = service.courses().courseWork().list(
                     courseId=course_id,
                     orderBy="updateTime desc",
-                    pageSize=20,
+                    pageSize=100,
                 ).execute()
                 courseworks = cw_response.get("courseWork", [])
 
@@ -132,7 +132,8 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
             try:
                 mat_response = service.courses().courseWorkMaterials().list(
                     courseId=course_id,
-                    pageSize=20,
+                    orderBy="updateTime desc",
+                    pageSize=100,
                 ).execute()
                 materials = mat_response.get("courseWorkMaterial", [])
 
@@ -165,7 +166,7 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
             try:
                 ann_response = service.courses().announcements().list(
                     courseId=course_id,
-                    pageSize=10,
+                    pageSize=100,
                 ).execute()
                 announcements = ann_response.get("announcements", [])
 

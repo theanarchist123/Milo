@@ -30,7 +30,7 @@ export function OutputCard({ output, onPreview, index }: OutputCardProps) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.07 }}
       whileHover={{ scale: 1.015, borderColor: 'rgba(255,255,255,0.1)' }}
-      className="card p-5 flex flex-col justify-between"
+      className="card p-5 flex flex-col justify-between h-full min-w-0 overflow-hidden"
     >
       <div className="flex flex-col gap-4">
         {/* Icon + type */}
@@ -73,17 +73,17 @@ export function OutputCard({ output, onPreview, index }: OutputCardProps) {
       <div className="flex gap-2 pt-4 border-t border-border mt-4 shrink-0">
         <button
           onClick={() => onPreview(output)}
-          className="btn btn-secondary flex-1 text-xs py-2"
+          className="btn btn-secondary flex-1 text-xs py-2 px-1 lg:px-2 gap-1"
         >
-          <Eye size={13} /> Preview
+          <Eye size={13} className="shrink-0" /> Preview
         </button>
         <a
           href={output.docxUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="btn btn-primary flex-1 text-xs py-2 text-center items-center justify-center inline-flex gap-1.5"
+          className="btn btn-primary flex-1 text-xs py-2 px-1 lg:px-2 text-center items-center justify-center inline-flex gap-1"
         >
-          <Download size={13} /> Download
+          <Download size={13} className="shrink-0" /> Download
         </a>
       </div>
     </motion.div>

@@ -7,7 +7,16 @@ frontend/.env.local
 
 # Keep tracked defaults if needed, but ignore private overrides
 
-# Local runtime data
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Backend artifacts
+backend/node_modules/
+backend/package-lock.json
 backend/miro.db
 backend/media/outputs/*
 !backend/media/outputs/.gitkeep
@@ -17,3 +26,7 @@ frontend/dist
 
 # Logs
 *.log
+
+# OS files
+.DS_Store
+Thumbs.db

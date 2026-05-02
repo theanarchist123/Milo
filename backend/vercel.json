@@ -1,26 +1,26 @@
 {
   "version": 2,
   "functions": {
-    "main.py": {
+    "api/index.py": {
       "maxDuration": 60
     }
   },
   "routes": [
     {
       "src": "/health",
-      "dest": "main.py"
+      "dest": "api/index.py"
     },
     {
       "src": "/api/(.*)",
-      "dest": "main.py"
+      "dest": "api/index.py"
     },
     {
       "src": "/media/(.*)",
-      "dest": "main.py"
+      "dest": "api/index.py"
     },
     {
       "src": "/(.*)",
-      "dest": "main.py"
+      "dest": "api/index.py"
     }
   ],
   "build": {

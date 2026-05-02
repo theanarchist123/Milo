@@ -2,11 +2,16 @@
 Gmail Service — fetches academic emails for a user using their OAuth2 access token.
 Uses the official Google API Python client (google-api-python-client).
 
-Fetches emails with academic keywords, saves them to SQLite via SQLAlchemy.
+Key improvements:
+- Extracts Google Drive / Docs / Sheets links from multipart email parts,
+  including application/pdf and other non-text MIME parts that carry Drive links.
+- Injects discovered attachment URLs directly into body_text so that
+  _expand_urls_in_content() in gemini_service.py fetches and reads them for the AI.
 """
 import base64
 import datetime
 import logging
+import re
 from typing import Optional
 
 from google.oauth2.credentials import Credentials as GoogleCredentials
@@ -20,14 +25,19 @@ logger = logging.getLogger(__name__)
 
 MAX_EMAILS = 100  # Max emails to fetch per sync
 
+# Regex to pull any https:// URL out of text (used when extracting from HTML parts)
+_URL_RE = re.compile(r'https?://[^\s<>"\']+')
+
+# Drive / Docs / Sheets / Slides / Forms URL patterns worth fetching
+_GOOGLE_DOC_PATTERNS = re.compile(
+    r'https://(?:docs|drive)\.google\.com/(?:document|spreadsheets|presentation|forms|file)/[^\s<>"\']*',
+    re.IGNORECASE,
+)
+
 
 def _build_gmail_service(access_token: str):
     """Build and return an authenticated Gmail API service."""
     try:
-        # Explicitly set expiry to 55 min from now. Without an expiry, the
-        # google-auth library thinks the token needs refreshing and raises:
-        #   "You must specify refresh_token, token_uri, client_id, and client_secret"
-        # since we don't have refresh credentials from Firebase's OAuth flow.
         creds = GoogleCredentials(
             token=access_token,
             expiry=datetime.datetime.utcnow() + datetime.timedelta(minutes=55),
@@ -39,32 +49,6 @@ def _build_gmail_service(access_token: str):
         raise
 
 
-def _decode_body(payload: dict) -> str:
-    """Recursively decode the email body from the Gmail message payload."""
-    body_text = ""
-    mime_type = payload.get("mimeType", "")
-
-    if mime_type == "text/plain":
-        data = payload.get("body", {}).get("data", "")
-        if data:
-            body_text = base64.urlsafe_b64decode(data + "==").decode("utf-8", errors="replace")
-    elif mime_type == "text/html":
-        # Only use HTML if we have no plain text
-        data = payload.get("body", {}).get("data", "")
-        if data:
-            body_text = base64.urlsafe_b64decode(data + "==").decode("utf-8", errors="replace")
-    elif "parts" in payload:
-        # Multipart message — prefer text/plain part
-        for part in payload["parts"]:
-            result = _decode_body(part)
-            if result:
-                body_text = result
-                if part.get("mimeType") == "text/plain":
-                    break  # Found plain text; stop looking
-
-    return body_text.strip()
-
-
 def _extract_headers(headers: list, name: str) -> str:
     """Extract a specific header by name from the list of Gmail headers."""
     for h in headers:
@@ -73,10 +57,100 @@ def _extract_headers(headers: list, name: str) -> str:
     return ""
 
 
+def _decode_part_data(data: str) -> str:
+    """Base64url-decode a Gmail message part's data field."""
+    try:
+        return base64.urlsafe_b64decode(data + "==").decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def _walk_parts(payload: dict) -> tuple[str, str, list[str]]:
+    """
+    Recursively walk the message payload tree.
+    Returns:
+        plain_text  – best plain-text body found
+        html_text   – best HTML body found (fallback)
+        drive_urls  – all Google Drive / Docs / Sheets URLs found in any part
+    """
+    plain_text = ""
+    html_text = ""
+    drive_urls: list[str] = []
+
+    mime = payload.get("mimeType", "")
+    parts = payload.get("parts", [])
+    body_data = payload.get("body", {}).get("data", "")
+
+    if mime == "text/plain" and body_data:
+        plain_text = _decode_part_data(body_data)
+        # Also scan plain text for Drive URLs
+        drive_urls += _GOOGLE_DOC_PATTERNS.findall(plain_text)
+
+    elif mime == "text/html" and body_data:
+        html_text = _decode_part_data(body_data)
+        # Pull every href / raw URL from the HTML that looks like a Google Doc
+        drive_urls += _GOOGLE_DOC_PATTERNS.findall(html_text)
+
+    elif parts:
+        # Multipart — recurse into each child part
+        for part in parts:
+            child_plain, child_html, child_urls = _walk_parts(part)
+            if child_plain:
+                plain_text = child_plain  # prefer plain text
+            if child_html and not html_text:
+                html_text = child_html
+            drive_urls += child_urls
+
+    return plain_text, html_text, drive_urls
+
+
+def _decode_body_and_attachments(payload: dict) -> tuple[str, list[str]]:
+    """
+    Parse the full Gmail message payload.
+    Returns:
+        body_text   – plain text body (or stripped HTML as fallback)
+        drive_urls  – deduplicated Google Drive attachment/link URLs
+    """
+    plain_text, html_text, drive_urls = _walk_parts(payload)
+
+    if plain_text:
+        body_text = plain_text.strip()
+    elif html_text:
+        # Strip HTML tags for a cleaner body
+        body_text = re.sub(r'<[^>]+>', ' ', html_text)
+        body_text = re.sub(r'\s+', ' ', body_text).strip()
+    else:
+        body_text = ""
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique_urls = []
+    for u in drive_urls:
+        # Clean trailing punctuation that sometimes sticks to URLs in HTML
+        u = u.rstrip(').,;"\'')
+        if u not in seen:
+            seen.add(u)
+            unique_urls.append(u)
+
+    return body_text, unique_urls
+
+
+def _build_body_with_attachments(body_text: str, drive_urls: list[str]) -> str:
+    """
+    Append Drive attachment URLs to the body text so that
+    _expand_urls_in_content() in gemini_service.py will find and fetch them.
+    """
+    if not drive_urls:
+        return body_text
+    url_block = "\n".join(f"[Attachment]: {u}" for u in drive_urls)
+    combined = f"{body_text}\n\n--- ATTACHED DOCUMENTS ---\n{url_block}" if body_text else url_block
+    return combined[:8000]  # cap to avoid bloating the DB
+
+
 def fetch_emails_for_user(user_id: str, access_token: str) -> dict:
     """
-    Main entry point. Fetches up to MAX_EMAILS academic emails from Gmail
-    and writes them to the SQLite database.
+    Main entry point. Fetches up to MAX_EMAILS emails from Gmail and writes
+    them (with extracted attachment URLs) to the database.
 
     Returns a summary dict: { fetched: int, saved: int, errors: int }
     """
@@ -89,11 +163,7 @@ def fetch_emails_for_user(user_id: str, access_token: str) -> dict:
         service = _build_gmail_service(access_token)
 
         # Fetch all emails from the last 30 days.
-        # We previously filtered by academic keywords but that was too restrictive —
-        # teacher announcements, grade notices, etc. often don't use those words.
-        # The MAX_EMAILS cap prevents fetching too many for large inboxes.
         query = "newer_than:30d"
-
         logger.info(f"[Gmail] Fetching up to {MAX_EMAILS} emails for user {user_id}...")
 
         results = service.users().messages().list(
@@ -133,13 +203,22 @@ def fetch_emails_for_user(user_id: str, access_token: str) -> dict:
                 email_date: Optional[datetime.datetime] = None
                 if date_str:
                     try:
-                        # Gmail dates can have timezone abbreviations — parse safely
                         from email.utils import parsedate_to_datetime
                         email_date = parsedate_to_datetime(date_str).replace(tzinfo=None)
                     except Exception:
                         email_date = datetime.datetime.utcnow()
 
-                body_text = _decode_body(payload)
+                # Extract body + any Drive attachment URLs
+                body_text, drive_urls = _decode_body_and_attachments(payload)
+
+                if drive_urls:
+                    logger.info(
+                        f"[Gmail] Message '{subject[:50]}' has {len(drive_urls)} Drive attachment(s): "
+                        + ", ".join(u[:60] for u in drive_urls)
+                    )
+
+                # Combine body with attachment URLs so AI pipeline can fetch them
+                enriched_body = _build_body_with_attachments(body_text, drive_urls)
 
                 # Save to DB
                 record = EmailRecord(
@@ -148,7 +227,7 @@ def fetch_emails_for_user(user_id: str, access_token: str) -> dict:
                     subject=subject,
                     sender=sender,
                     date=email_date or datetime.datetime.utcnow(),
-                    body_text=body_text[:5000],
+                    body_text=enriched_body,
                     status="fetched",
                     classification=None,
                 )
@@ -157,12 +236,12 @@ def fetch_emails_for_user(user_id: str, access_token: str) -> dict:
                 saved += 1
                 logger.debug(f"[Gmail] Saved: {subject[:60]}")
 
-                # Auto-classify with Gemini AI (non-fatal if it fails)
+                # Auto-classify with AI (non-fatal if it fails)
                 try:
                     from services.gemini_service import classify_content
                     classification = classify_content(
                         subject=subject,
-                        body=body_text[:2000],
+                        body=body_text[:2000],  # use plain body (no URLs) for classification
                         sender=sender,
                     )
                     record.classification = classification

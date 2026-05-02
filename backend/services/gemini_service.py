@@ -306,49 +306,91 @@ def determine_output_type(classification: Optional[dict], source_type: str = "em
         return "SUMMARY"
     return "SUMMARY"
 
+
 def _expand_urls_in_content(content: str) -> str:
-    urls = set(re.findall(r'https?://\S+', content))
-    if not urls:
+    """
+    Scans content for URLs — both bare https:// links and
+    '[Attachment]: URL' lines injected by gmail_service / classroom_service —
+    fetches each one, and injects the fetched text into the AI context.
+    """
+    import concurrent.futures
+
+    # Collect all bare URLs
+    bare_urls = set(re.findall(r'https?://\S+', content))
+
+    # Also collect [Attachment]: URL lines (highest priority — explicitly marked)
+    attachment_urls = set(re.findall(r'\[Attachment\]:\s*(https?://\S+)', content))
+
+    # Merge: attachment URLs first, then the rest
+    all_urls = list(attachment_urls) + [u for u in bare_urls if u not in attachment_urls]
+    all_urls = [u.rstrip(")'\",.&") for u in all_urls]
+
+    if not all_urls:
         return content
 
-    logger.info(f"[URLExpander] Scanning content for URLs... found {len(urls)}: {list(urls)[:3]}")
+    logger.info(
+        f"[URLExpander] Found {len(all_urls)} URL(s) "
+        f"({len(attachment_urls)} explicit attachment(s)): {all_urls[:3]}"
+    )
 
-    import concurrent.futures
-    
-    def _fetch_url(url: str):
-        url = url.rstrip(")'\",.&")
+    def _drive_file_to_export(url: str) -> str | None:
+        """Convert a drive.google.com/file/d/<ID>/... link to a direct download URL."""
+        m = re.search(r'/file/d/([a-zA-Z0-9_-]+)', url)
+        if m:
+            file_id = m.group(1)
+            return f"https://drive.google.com/uc?export=download&id={file_id}"
+        return None
+
+    def _fetch_url(url: str) -> str | None:
         try:
-            if 'drive.google.com/file' in url:
-                return None
-            elif 'docs.google.com/' in url or 'drive.google.com/' in url:
-                logger.info(f"[URLExpander] Parallel Browser Scrape: {url[:60]}...")
+            if 'docs.google.com/' in url:
+                # Google Docs/Sheets/Slides/Forms — use browser scraper
+                logger.info(f"[URLExpander] Fetching Google Doc: {url[:70]}")
+                text = browser_scrape_url(url, timeout_ms=20000)
+                if text:
+                    return f"\n\n[Content from Google Doc {url}:\n{text[:10000]}\n]"
+
+            elif 'drive.google.com/file' in url:
+                # Drive file — convert to direct download and fetch
+                export_url = _drive_file_to_export(url)
+                if export_url:
+                    logger.info(f"[URLExpander] Fetching Drive file: {export_url[:70]}")
+                    r = requests.get(export_url, timeout=15, allow_redirects=True)
+                    if r.status_code == 200 and r.text.strip():
+                        return f"\n\n[Content from Drive file {url}:\n{r.text[:8000]}\n]"
+
+            elif 'drive.google.com/' in url:
+                logger.info(f"[URLExpander] Fetching Drive URL: {url[:70]}")
                 text = browser_scrape_url(url, timeout_ms=15000)
                 if text:
-                    return f"\n\n[Content fetched via browser from {url}:\n{text[:8000]}\n]"
+                    return f"\n\n[Content from Drive {url}:\n{text[:8000]}\n]"
+
             else:
-                logger.info(f"[URLExpander] Parallel Requests Scrape: {url[:60]}...")
+                logger.info(f"[URLExpander] Fetching webpage: {url[:70]}")
                 r = requests.get(url, timeout=10)
                 if r.status_code == 200 and 'text/html' in r.headers.get('Content-Type', ''):
                     from bs4 import BeautifulSoup
                     soup = BeautifulSoup(r.content, 'html.parser')
                     text = soup.get_text(separator=' ', strip=True)
                     if text:
-                        return f"\n\n[Content attached from Webpage {url}:\n{text[:4000]}\n]"
+                        return f"\n\n[Content from Webpage {url}:\n{text[:4000]}\n]"
+
         except Exception as e:
-            logger.warning(f"[URLExpander] Parallel fetch error for {url}: {e}")
+            logger.warning(f"[URLExpander] Fetch error for {url}: {e}")
         return None
 
     expanded_text = []
-    # Use max 4 workers to avoid overwhelming local browser instance/network
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        future_to_url = {executor.submit(_fetch_url, url): url for url in urls}
+        future_to_url = {executor.submit(_fetch_url, url): url for url in all_urls}
         for future in concurrent.futures.as_completed(future_to_url):
             res = future.result()
             if res:
                 expanded_text.append(res)
 
     if expanded_text:
-        logger.info(f"[URLExpander] Injecting {len(expanded_text)} fetched attachment(s) into AI context")
+        logger.info(f"[URLExpander] Injecting {len(expanded_text)} fetched document(s) into AI context")
         return content + "\n\n--- AUTOMATICALLY EXTRACTED ATTACHMENTS ---\n" + "".join(expanded_text)
-    logger.warning("[URLExpander] No URLs were successfully fetched — generating from description only")
+
+    logger.warning("[URLExpander] No documents were successfully fetched — generating from description only")
     return content
+

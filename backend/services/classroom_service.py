@@ -1,8 +1,12 @@
 """
-Google Classroom Service — fetches courses, coursework, and materials
+Google Classroom Service — fetches courses, coursework, materials, and announcements
 for a user using their OAuth2 access token.
 
-Saves data to the SQLite database via SQLAlchemy models.
+Key improvements:
+- Upserts items (not just insert-if-missing) so edits by teachers are reflected.
+- Extracts ALL attachment URLs from materials list (driveFile, link, form, youtubeVideo)
+  and stores them in the description so the AI pipeline can read them automatically.
+- Fetches the full updateTime to detect when content has changed.
 """
 import datetime
 import logging
@@ -20,10 +24,6 @@ logger = logging.getLogger(__name__)
 def _build_classroom_service(access_token: str):
     """Build and return an authenticated Google Classroom API service."""
     try:
-        # Explicitly set expiry to 55 min from now. Without an expiry, the
-        # google-auth library thinks the token needs refreshing and raises:
-        #   "You must specify refresh_token, token_uri, client_id, and client_secret"
-        # since we don't have refresh credentials from Firebase's OAuth flow.
         creds = GoogleCredentials(
             token=access_token,
             expiry=datetime.datetime.utcnow() + datetime.timedelta(minutes=55),
@@ -53,10 +53,62 @@ def _parse_due_date(coursework: dict) -> datetime.datetime | None:
         return None
 
 
+def _extract_material_urls(materials: list) -> list[str]:
+    """
+    Pull every accessible URL out of a Classroom `materials` list.
+    Each material can be a driveFile, link, youtubeVideo, or form.
+    Returns a deduplicated list of URL strings.
+    """
+    urls = []
+    for mat in materials:
+        # Google Drive file
+        drive_file = mat.get("driveFile", {}).get("driveFile", {})
+        if drive_file.get("alternateLink"):
+            urls.append(drive_file["alternateLink"])
+
+        # Plain hyperlink
+        link = mat.get("link", {})
+        if link.get("url"):
+            urls.append(link["url"])
+
+        # YouTube video
+        yt = mat.get("youtubeVideo", {})
+        if yt.get("alternateLink"):
+            urls.append(yt["alternateLink"])
+        elif yt.get("id"):
+            urls.append(f"https://www.youtube.com/watch?v={yt['id']}")
+
+        # Google Form
+        form = mat.get("form", {})
+        if form.get("formUrl"):
+            urls.append(form["formUrl"])
+
+    # Deduplicate while preserving order
+    seen = set()
+    result = []
+    for u in urls:
+        if u not in seen:
+            seen.add(u)
+            result.append(u)
+    return result
+
+
+def _build_description(base_text: str, material_urls: list[str]) -> str:
+    """
+    Combine the text description with any attachment URLs so that
+    the AI pipeline (_expand_urls_in_content) can find and fetch them.
+    """
+    text = (base_text or "").strip()
+    if material_urls:
+        url_block = "\n".join(f"[Attachment]: {u}" for u in material_urls)
+        text = f"{text}\n\n{url_block}" if text else url_block
+    return text[:4000]  # keep within DB column budget
+
+
 def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
     """
-    Main entry point. Fetches courses, coursework, and materials from
-    Google Classroom and saves them to the SQLite database.
+    Main entry point. Fetches courses, coursework, materials, and announcements
+    from Google Classroom and upserts them into the database.
 
     Returns: { courses: int, items: int, errors: int }
     """
@@ -84,17 +136,13 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                 db.add(course)
 
             course.name = course_data.get("name", "Unknown Course")
-            # Google Classroom doesn't expose teacher display name in courses.list;
-            # 'description' often has it, otherwise we use ownerId as a fallback
             course.teacher = course_data.get("description", course_data.get("ownerId", ""))[:80]
             course.section = course_data.get("section", "")
-            # Use the course name as the subject query for Unsplash images
             course.subject = course_data.get("name", "").lower()
-
             db.commit()
             courses_saved += 1
 
-            # ─── Step 2: Fetch coursework for this course ───────────────
+            # ─── Step 2: Fetch coursework ─────────────────────────────────
             try:
                 cw_response = service.courses().courseWork().list(
                     courseId=course_id,
@@ -102,33 +150,42 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                     pageSize=100,
                 ).execute()
                 courseworks = cw_response.get("courseWork", [])
+                logger.info(f"[Classroom] Course {course_id}: {len(courseworks)} coursework items")
 
                 for cw in courseworks:
                     cw_id = cw["id"]
+                    mat_urls = _extract_material_urls(cw.get("materials", []))
+                    description = _build_description(cw.get("description", ""), mat_urls)
+
                     existing = db.query(CourseItem).filter(CourseItem.id == cw_id).first()
                     if existing:
-                        continue
-
-                    item = CourseItem(
-                        id=cw_id,
-                        course_id=course_id,
-                        owner_id=user_id,
-                        title=cw.get("title", "Untitled"),
-                        type="COURSEWORK",
-                        description=cw.get("description", "")[:2000],
-                        due_date=_parse_due_date(cw),
-                        status="fetched",
-                    )
-                    db.add(item)
-                    db.commit()
-                    items_saved += 1
+                        # Update in case teacher edited the item or added attachments
+                        existing.title = cw.get("title", existing.title)
+                        existing.description = description
+                        existing.due_date = _parse_due_date(cw)
+                        db.commit()
+                    else:
+                        item = CourseItem(
+                            id=cw_id,
+                            course_id=course_id,
+                            owner_id=user_id,
+                            title=cw.get("title", "Untitled"),
+                            type="COURSEWORK",
+                            description=description,
+                            due_date=_parse_due_date(cw),
+                            status="fetched",
+                        )
+                        db.add(item)
+                        db.commit()
+                        items_saved += 1
+                        logger.info(f"[Classroom] New coursework: '{cw.get('title', '')[:60]}' | attachments={len(mat_urls)}")
 
             except Exception as e:
                 logger.warning(f"[Classroom] Error fetching coursework for course {course_id}: {e}")
                 errors += 1
                 db.rollback()
 
-            # ─── Step 3: Fetch course materials ────────────────────────
+            # ─── Step 3: Fetch course materials ───────────────────────────
             try:
                 mat_response = service.courses().courseWorkMaterials().list(
                     courseId=course_id,
@@ -136,59 +193,76 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                     pageSize=100,
                 ).execute()
                 materials = mat_response.get("courseWorkMaterial", [])
+                logger.info(f"[Classroom] Course {course_id}: {len(materials)} materials")
 
                 for mat in materials:
                     mat_id = mat["id"]
+                    mat_urls = _extract_material_urls(mat.get("materials", []))
+                    description = _build_description(mat.get("description", ""), mat_urls)
+
                     existing = db.query(CourseItem).filter(CourseItem.id == mat_id).first()
                     if existing:
-                        continue
-
-                    item = CourseItem(
-                        id=mat_id,
-                        course_id=course_id,
-                        owner_id=user_id,
-                        title=mat.get("title", "Untitled Material"),
-                        type="MATERIAL",
-                        description=mat.get("description", "")[:2000],
-                        due_date=None,
-                        status="fetched",
-                    )
-                    db.add(item)
-                    db.commit()
-                    items_saved += 1
+                        existing.title = mat.get("title", existing.title)
+                        existing.description = description
+                        db.commit()
+                    else:
+                        item = CourseItem(
+                            id=mat_id,
+                            course_id=course_id,
+                            owner_id=user_id,
+                            title=mat.get("title", "Untitled Material"),
+                            type="MATERIAL",
+                            description=description,
+                            due_date=None,
+                            status="fetched",
+                        )
+                        db.add(item)
+                        db.commit()
+                        items_saved += 1
+                        logger.info(f"[Classroom] New material: '{mat.get('title', '')[:60]}' | attachments={len(mat_urls)}")
 
             except Exception as e:
                 logger.warning(f"[Classroom] Error fetching materials for course {course_id}: {e}")
                 errors += 1
                 db.rollback()
 
-            # ─── Step 4: Fetch announcements ────────────────────────────
+            # ─── Step 4: Fetch announcements ──────────────────────────────
             try:
                 ann_response = service.courses().announcements().list(
                     courseId=course_id,
+                    orderBy="updateTime desc",
                     pageSize=100,
                 ).execute()
                 announcements = ann_response.get("announcements", [])
+                logger.info(f"[Classroom] Course {course_id}: {len(announcements)} announcements")
 
                 for ann in announcements:
                     ann_id = ann["id"]
+                    ann_text = ann.get("text", "")
+                    mat_urls = _extract_material_urls(ann.get("materials", []))
+                    description = _build_description(ann_text, mat_urls)
+                    title = ann_text[:200] if ann_text else "Announcement"
+
                     existing = db.query(CourseItem).filter(CourseItem.id == ann_id).first()
                     if existing:
-                        continue
-
-                    item = CourseItem(
-                        id=ann_id,
-                        course_id=course_id,
-                        owner_id=user_id,
-                        title=ann.get("text", "Announcement")[:200],
-                        type="ANNOUNCEMENT",
-                        description=ann.get("text", "")[:2000],
-                        due_date=None,
-                        status="fetched",
-                    )
-                    db.add(item)
-                    db.commit()
-                    items_saved += 1
+                        existing.title = title
+                        existing.description = description
+                        db.commit()
+                    else:
+                        item = CourseItem(
+                            id=ann_id,
+                            course_id=course_id,
+                            owner_id=user_id,
+                            title=title,
+                            type="ANNOUNCEMENT",
+                            description=description,
+                            due_date=None,
+                            status="fetched",
+                        )
+                        db.add(item)
+                        db.commit()
+                        items_saved += 1
+                        logger.info(f"[Classroom] New announcement: '{title[:60]}' | attachments={len(mat_urls)}")
 
             except Exception as e:
                 logger.warning(f"[Classroom] Error fetching announcements for course {course_id}: {e}")
@@ -202,6 +276,6 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
         db.close()
 
     logger.info(
-        f"[Classroom] Sync complete for {user_id}: courses={courses_saved}, items={items_saved}, errors={errors}"
+        f"[Classroom] Sync complete for {user_id}: courses={courses_saved}, new_items={items_saved}, errors={errors}"
     )
     return {"courses": courses_saved, "items": items_saved, "errors": errors}

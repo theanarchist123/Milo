@@ -1,9 +1,9 @@
 # Root-level ignore rules
 
 # Local env files (never commit secrets)
-*.env.local
-backend/.env.local
-frontend/.env.local
+.env
+.env.*
+!.env.example
 
 # Keep tracked defaults if needed, but ignore private overrides
 

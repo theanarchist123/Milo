@@ -10,8 +10,34 @@ import type { Output } from '@/types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+import { apiClient } from '@/lib/apiClient';
+
 // Shadcn primitives (simulated UI without full Radix install overhead for now)
 function Dialog({ open, onClose, output }: { open: boolean; onClose: () => void; output: Output | null }) {
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    if (!output) return;
+    try {
+      setDownloading(true);
+      const res = await apiClient.get(output.docxUrl, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${output.title}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Download failed', err);
+      alert('Failed to download document.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   if (!open || !output) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 pb-20">
@@ -32,10 +58,11 @@ function Dialog({ open, onClose, output }: { open: boolean; onClose: () => void;
           </div>
           <div className="flex items-center gap-3 shrink-0">
             <button 
-              onClick={() => window.open(output.docxUrl, '_blank')}
+              onClick={handleDownload}
+              disabled={downloading}
               className="btn btn-primary py-1.5 px-3 text-sm flex-shrink-0"
             >
-              <Download size={14} /> Download DOCX
+              <Download size={14} /> {downloading ? 'Downloading...' : 'Download DOCX'}
             </button>
             <button onClick={onClose} className="p-2 rounded-lg hover:bg-border text-text-secondary transition-colors">
               <X size={18} />

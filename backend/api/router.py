@@ -131,12 +131,35 @@ def get_vault_outputs(db: Session = Depends(get_db), current_user: User = Depend
             "type": o.type,
             "title": o.title,
             "sourceSubject": o.task.source_subject if o.task else "Unknown",
-            "docxUrl": f"http://localhost:8000/media/{o.file_path}",
-            "pdfUrl": f"http://localhost:8000/media/{o.file_path}",
-            "fileSizeBytes": 100000, # Mock size since it's local
+            "docxUrl": f"/api/outputs/{o.id}/download",
+            "pdfUrl": f"/api/outputs/{o.id}/download",
+            "fileSizeBytes": 100000, # Mock size since it's generated dynamically
             "previewText": o.preview_text
         } for o in outputs
     ]
+
+from fastapi.responses import StreamingResponse
+from services.docx_generator import generate_docx_bytes
+import urllib.parse
+
+@router.get("/outputs/{output_id}/download")
+def download_vault_output(output_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    output = db.query(GeneratedOutput).filter(GeneratedOutput.id == output_id, GeneratedOutput.owner_id == current_user.id).first()
+    if not output:
+        raise HTTPException(status_code=404, detail="Document not found")
+        
+    docx_bytes = generate_docx_bytes(output.title, output.preview_text or "")
+    
+    # Safe filename
+    filename = urllib.parse.quote(output.title.replace(' ', '_')) + ".docx"
+    
+    return StreamingResponse(
+        docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename}"
+        }
+    )
 
 # ─── Tasks ───────────────────────────────────────────────────────
 

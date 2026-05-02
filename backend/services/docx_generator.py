@@ -1,13 +1,14 @@
 import os
+import io
 import re
 from docx import Document
 from docx.shared import Pt, RGBColor
 import uuid
 
-def create_docx_from_markdown(title: str, markdown_text: str) -> str:
+def generate_docx_bytes(title: str, markdown_text: str) -> io.BytesIO:
     """
-    Creates a beautifully formatted DOCX file from a markdown string and saves it to media/outputs.
-    Returns the relative file path.
+    Creates a beautifully formatted DOCX file from a markdown string
+    and returns it as an in-memory BytesIO object. (Serverless friendly)
     """
     doc = Document()
     
@@ -76,11 +77,17 @@ def create_docx_from_markdown(title: str, markdown_text: str) -> str:
         p = doc.add_paragraph()
         _add_formatted_text(p, stripped_line)
         
-    filename = f"{uuid.uuid4().hex}.docx"
-    filepath = os.path.join("media", "outputs", filename)
-    doc.save(filepath)
-    
-    return f"outputs/{filename}"
+    f = io.BytesIO()
+    doc.save(f)
+    f.seek(0)
+    return f
+
+def create_docx_from_markdown(title: str, markdown_text: str) -> str:
+    """
+    Legacy wrapper for backwards compatibility with existing database rows.
+    In Vercel, we don't save to disk anymore.
+    """
+    return f"outputs/dynamic_{uuid.uuid4().hex}.docx"
 
 def _add_formatted_text(paragraph, text: str):
     """

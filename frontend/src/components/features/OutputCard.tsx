@@ -2,6 +2,8 @@ import { motion } from 'framer-motion';
 import { FileText, Download, Eye, Clock } from 'lucide-react';
 import { cn, timeAgo, formatFileSize, formatDate } from '@/lib/utils';
 import type { Output, OutputType } from '@/types';
+import { apiClient } from '@/lib/apiClient';
+import { useState } from 'react';
 
 const TYPE_BADGE: Record<OutputType, string> = {
   ASSIGNMENT: 'badge-emerald',
@@ -24,6 +26,29 @@ interface OutputCardProps {
 }
 
 export function OutputCard({ output, onPreview, index }: OutputCardProps) {
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    try {
+      setDownloading(true);
+      const res = await apiClient.get(output.docxUrl, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${output.title}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Download failed', err);
+      alert('Failed to download document.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -77,14 +102,13 @@ export function OutputCard({ output, onPreview, index }: OutputCardProps) {
         >
           <Eye size={13} className="shrink-0" /> Preview
         </button>
-        <a
-          href={output.docxUrl}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          onClick={handleDownload}
+          disabled={downloading}
           className="btn btn-primary flex-1 text-xs py-2 px-1 lg:px-2 text-center items-center justify-center inline-flex gap-1"
         >
-          <Download size={13} className="shrink-0" /> Download
-        </a>
+          <Download size={13} className="shrink-0" /> {downloading ? 'Downloading...' : 'Download'}
+        </button>
       </div>
     </motion.div>
   );

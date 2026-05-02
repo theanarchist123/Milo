@@ -22,7 +22,7 @@ type SyncState = 'idle' | 'syncing' | 'done' | 'error' | 'no-token';
 type SyncResult = { label: string; isError: boolean };
 
 export function Sidebar() {
-  const { user, accessToken } = useAuthStore();
+  const { user } = useAuthStore();
   const { sidebarOpen, toggleSidebar, requestRefetch } = useUiStore();
   const [syncState, setSyncState] = useState<SyncState>('idle');
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
@@ -31,12 +31,10 @@ export function Sidebar() {
   const handleSync = async () => {
     if (syncState === 'syncing') return;
 
-    if (!accessToken) {
-      setSyncState('no-token');
-      setSyncResult({ label: 'Sign out → sign in again to sync', isError: true });
-      setTimeout(() => { setSyncState('idle'); setSyncResult(null); }, 5000);
-      return;
-    }
+    // No local token check needed — the backend stores the Google token in the
+    // DB after sign-in. Firebase restores the session across reloads automatically.
+    // If the Google token is missing in DB, the backend will return an error we
+    // handle below.
 
     setSyncState('syncing');
     setSyncResult(null);
@@ -76,11 +74,17 @@ export function Sidebar() {
         requestRefetch(); // Tell useApi to reload all data from DB
       }
     } catch (err: unknown) {
-      const axiosErr = err as { message?: string };
+      const axiosErr = err as { message?: string; response?: { data?: { detail?: string } } };
       const isTimeout = axiosErr?.message?.includes('timeout');
+      const detail = axiosErr?.response?.data?.detail ?? '';
+      const isNoToken = detail.toLowerCase().includes('no google token') || detail.toLowerCase().includes('no_token');
       setSyncState('error');
       setSyncResult({
-        label: isTimeout ? 'Sync timed out — try again' : 'Network error — is the backend running?',
+        label: isTimeout
+          ? 'Sync timed out — try again'
+          : isNoToken
+          ? 'Sign out & sign in again to grant access'
+          : 'Network error — is the backend running?',
         isError: true,
       });
     } finally {
@@ -139,7 +143,7 @@ export function Sidebar() {
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-success' : 'bg-yellow-400'}`} />
                 <span className="text-xs text-text-secondary truncate">
-                  {isConnected ? (accessToken ? 'Google connected' : 'Sign in to sync') : 'Not signed in'}
+                  {isConnected ? 'Google connected' : 'Not signed in'}
                 </span>
               </div>
             </motion.div>

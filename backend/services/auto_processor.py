@@ -265,7 +265,8 @@ def _process_course_item_safe(db, user: User, item: CourseItem):
             title=item.title or "Classroom Item",
             content=content,
             output_type=output_type,
-            roll_number=user.roll_number or ""
+            roll_number=user.roll_number or "",
+            access_token=user.google_access_token or "",
         )
 
         if "error" in generated:
@@ -359,7 +360,8 @@ def _process_email_safe(db, user: User, email: EmailRecord):
             title=email.subject or "Email Content",
             content=content,
             output_type=output_type,
-            roll_number=user.roll_number or ""
+            roll_number=user.roll_number or "",
+            access_token=user.google_access_token or "",
         )
 
         if "error" in generated:

@@ -31,20 +31,22 @@ def _playwright_available() -> bool:
 
 # ── Public entry-point ───────────────────────────────────────────────────────
 
-def scrape_url(url: str, timeout_ms: int = 25000) -> str:
+def scrape_url(url: str, timeout_ms: int = 25000, auth_headers: dict | None = None) -> str:
     """
     Smart URL scraper:
     - Google Sheets → discovers all tab GIDs (browser) then exports as CSV
-    - Google Docs   → exports as plain text via export API
+    - Google Docs   → exports as plain text via export API (authenticated if token provided)
     - Any webpage   → Playwright if available, otherwise requests + BS4
     """
     logger.info(f"[BrowserScraper] Scraping: {url[:80]}")
+    if auth_headers is None:
+        auth_headers = {}
 
     try:
         if 'docs.google.com/spreadsheets' in url:
             return _scrape_google_sheets_all_tabs(url, timeout_ms)
         elif 'docs.google.com/document' in url:
-            return _scrape_google_doc(url, timeout_ms)
+            return _scrape_google_doc(url, timeout_ms, auth_headers=auth_headers)
         else:
             return _scrape_webpage(url, timeout_ms)
     except Exception as e:
@@ -140,18 +142,26 @@ def _scrape_google_sheets_all_tabs(sheet_url: str, timeout_ms: int) -> str:
 
 # ── Google Docs ──────────────────────────────────────────────────────────────
 
-def _scrape_google_doc(doc_url: str, timeout_ms: int) -> str:
-    """Exports a Google Doc as plain text (no browser needed)."""
+def _scrape_google_doc(doc_url: str, timeout_ms: int, auth_headers: dict | None = None) -> str:
+    """Exports a Google Doc as plain text.
+    Uses auth_headers (Bearer token) when available for private documents.
+    Falls back to unauthenticated export for public docs.
+    """
     match = re.search(r'/d/([a-zA-Z0-9-_]+)', doc_url)
     if not match:
         return ""
     doc_id = match.group(1)
     export_url = f"https://docs.google.com/document/d/{doc_id}/export?format=txt"
+    headers = auth_headers or {}
     try:
-        r = requests.get(export_url, timeout=10)
-        if r.status_code == 200:
-            logger.info(f"[BrowserScraper] Google Doc exported: {len(r.text)} chars")
+        r = requests.get(export_url, headers=headers, timeout=15, allow_redirects=True)
+        if r.status_code == 200 and r.text.strip():
+            logger.info(f"[BrowserScraper] Google Doc exported {'(authenticated)' if headers else '(public)'}: {len(r.text)} chars")
             return r.text[:12000]
+        elif r.status_code in (401, 403) and not headers:
+            logger.warning(f"[BrowserScraper] Doc requires auth (HTTP {r.status_code}). No token available.")
+        else:
+            logger.warning(f"[BrowserScraper] Doc export returned HTTP {r.status_code}")
     except Exception as e:
         logger.warning(f"[BrowserScraper] Doc export failed: {e}")
     return ""

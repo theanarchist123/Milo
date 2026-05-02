@@ -118,6 +118,7 @@ router = APIRouter()
 
 class StoreTokenRequest(BaseModel):
     accessToken: str
+    refreshToken: Optional[str] = None
     displayName: Optional[str] = None
     email: Optional[str] = None
     photoURL: Optional[str] = None
@@ -134,6 +135,8 @@ def store_token(
     Called by the frontend immediately after signInWithPopup succeeds.
     """
     current_user.google_access_token = body.accessToken
+    if body.refreshToken:
+        current_user.google_refresh_token = body.refreshToken
     if body.displayName:
         current_user.display_name = body.displayName
     if body.email:

@@ -179,6 +179,7 @@ def get_task(task_id: str, db: Session = Depends(get_db), current_user: User = D
 from services.orchestrator import run_gmail_sync, run_classroom_sync
 from services.gmail_service import fetch_emails_for_user
 from services.classroom_service import fetch_classroom_for_user
+from services.token_refresher import get_valid_access_token
 
 
 def _token_error_response(svc_name: str, err: Exception) -> dict:
@@ -231,23 +232,32 @@ def trigger_full_sync(
     Returns real stats: how many emails/courses were fetched, and any errors.
     This is intentionally synchronous so the frontend receives actual results.
     """
-    if not current_user.google_access_token:
+    if not current_user.google_access_token and not current_user.google_refresh_token:
         return {
             "status": "error",
             "error": "no_token",
             "message": "No Google OAuth token found. Please sign out and sign in again to reconnect Google services."
         }
 
+    # Auto-refresh token if expired
+    access_token = get_valid_access_token(current_user, db)
+    if not access_token:
+        return {
+            "status": "error",
+            "error": "no_token",
+            "message": "Google token expired and refresh failed. Please sign out and sign in again."
+        }
+
     gmail_result: dict = {}
     classroom_result: dict = {}
 
     try:
-        gmail_result = fetch_emails_for_user(current_user.id, current_user.google_access_token)
+        gmail_result = fetch_emails_for_user(current_user.id, access_token)
     except Exception as e:
         gmail_result = _token_error_response("Gmail", e)
 
     try:
-        classroom_result = fetch_classroom_for_user(current_user.id, current_user.google_access_token)
+        classroom_result = fetch_classroom_for_user(current_user.id, access_token)
     except Exception as e:
         classroom_result = _token_error_response("Classroom", e)
 
@@ -364,6 +374,7 @@ def process_email(
             title=email.subject or "Email",
             content=email.body_text or "",
             output_type=output_type,
+            access_token=current_user.google_access_token or "",
         )
 
         if "error" in generated:
@@ -478,6 +489,7 @@ def process_classroom_item(
             content=content,
             output_type=output_type,
             roll_number=roll_number,
+            access_token=current_user.google_access_token or "",
         )
 
         if "error" in generated:

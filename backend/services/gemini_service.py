@@ -251,11 +251,11 @@ Write the organized study notes below:""",
 }
 
 
-def generate_output(title: str, content: str, output_type: str = "SUMMARY", roll_number: str = "") -> dict:
+def generate_output(title: str, content: str, output_type: str = "SUMMARY", roll_number: str = "", access_token: str = "") -> dict:
     prompt_template = GENERATE_PROMPTS.get(output_type, GENERATE_PROMPTS["SUMMARY"])
 
     try:
-        expanded_content = _expand_urls_in_content(content)
+        expanded_content = _expand_urls_in_content(content, access_token=access_token)
         
         from collections import defaultdict
         fmt_vars = defaultdict(str)
@@ -307,11 +307,12 @@ def determine_output_type(classification: Optional[dict], source_type: str = "em
     return "SUMMARY"
 
 
-def _expand_urls_in_content(content: str) -> str:
+def _expand_urls_in_content(content: str, access_token: str = "") -> str:
     """
     Scans content for URLs — both bare https:// links and
     '[Attachment]: URL' lines injected by gmail_service / classroom_service —
     fetches each one, and injects the fetched text into the AI context.
+    Uses the user's OAuth access token to authenticate Google Docs/Drive requests.
     """
     import concurrent.futures
 
@@ -323,7 +324,7 @@ def _expand_urls_in_content(content: str) -> str:
 
     # Merge: attachment URLs first, then the rest
     all_urls = list(attachment_urls) + [u for u in bare_urls if u not in attachment_urls]
-    all_urls = [u.rstrip(")'\",.&") for u in all_urls]
+    all_urls = [u.rstrip(")'\",.") for u in all_urls]
 
     if not all_urls:
         return content
@@ -332,6 +333,12 @@ def _expand_urls_in_content(content: str) -> str:
         f"[URLExpander] Found {len(all_urls)} URL(s) "
         f"({len(attachment_urls)} explicit attachment(s)): {all_urls[:3]}"
     )
+
+    # Build auth headers if we have a token
+    auth_headers = {}
+    if access_token:
+        auth_headers["Authorization"] = f"Bearer {access_token}"
+        logger.info("[URLExpander] Using OAuth token for authenticated Google requests")
 
     def _drive_file_to_export(url: str) -> str | None:
         """Convert a drive.google.com/file/d/<ID>/... link to a direct download URL."""
@@ -345,23 +352,24 @@ def _expand_urls_in_content(content: str) -> str:
         try:
             if 'docs.google.com/' in url:
                 # Google Docs/Sheets/Slides/Forms — use browser scraper
+                # Pass auth headers for authenticated access to private docs
                 logger.info(f"[URLExpander] Fetching Google Doc: {url[:70]}")
-                text = browser_scrape_url(url, timeout_ms=20000)
+                text = browser_scrape_url(url, timeout_ms=20000, auth_headers=auth_headers)
                 if text:
                     return f"\n\n[Content from Google Doc {url}:\n{text[:10000]}\n]"
 
             elif 'drive.google.com/file' in url:
-                # Drive file — convert to direct download and fetch
+                # Drive file — convert to direct download and fetch with auth
                 export_url = _drive_file_to_export(url)
                 if export_url:
                     logger.info(f"[URLExpander] Fetching Drive file: {export_url[:70]}")
-                    r = requests.get(export_url, timeout=15, allow_redirects=True)
+                    r = requests.get(export_url, headers=auth_headers, timeout=15, allow_redirects=True)
                     if r.status_code == 200 and r.text.strip():
                         return f"\n\n[Content from Drive file {url}:\n{r.text[:8000]}\n]"
 
             elif 'drive.google.com/' in url:
                 logger.info(f"[URLExpander] Fetching Drive URL: {url[:70]}")
-                text = browser_scrape_url(url, timeout_ms=15000)
+                text = browser_scrape_url(url, timeout_ms=15000, auth_headers=auth_headers)
                 if text:
                     return f"\n\n[Content from Drive {url}:\n{text[:8000]}\n]"
 
@@ -393,4 +401,3 @@ def _expand_urls_in_content(content: str) -> str:
 
     logger.warning("[URLExpander] No documents were successfully fetched — generating from description only")
     return content
-

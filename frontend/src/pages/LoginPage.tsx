@@ -37,8 +37,14 @@ export function LoginPage() {
       if (oauthAccessToken) {
         try {
           const idToken = await firebaseUser.getIdToken();
+          // Extract the OAuth refresh token from Firebase's internal token response.
+          // This allows the backend to silently refresh the access token after it
+          // expires (every ~1 hour) without forcing the user to sign in again.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const refreshToken = (result as any)._tokenResponse?.refreshToken ?? null;
           await apiClient.post('/auth/store-token', {
             accessToken: oauthAccessToken,
+            refreshToken,
             displayName: firebaseUser.displayName,
             email: firebaseUser.email,
             photoURL: firebaseUser.photoURL,

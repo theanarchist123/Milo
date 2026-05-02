@@ -1,14 +1,11 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "main.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "50mb"
-      }
+  "functions": {
+    "main.py": {
+      "maxDuration": 60,
+      "maxLambdaSize": "50mb"
     }
-  ],
+  },
   "routes": [
     {
       "src": "/health",
@@ -27,9 +24,9 @@
       "dest": "main.py"
     }
   ],
-  "functions": {
-    "main.py": {
-      "maxDuration": 60
+  "build": {
+    "env": {
+      "PIP_REQUIREMENTS": "requirements-vercel.txt"
     }
   }
 }

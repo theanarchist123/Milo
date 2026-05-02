@@ -25,8 +25,6 @@ psycopg2-binary
 # We use google.oauth2.id_token.verify_firebase_token (part of google-auth)
 # which verifies Firebase JWTs using Google's public keys — no service account needed.
 
-# Playwright — OPTIONAL, local dev only.
-# NOT installed on Vercel (too large; browser binaries ~300MB exceed serverless limits).
-# browser_scraper.py detects its absence and falls back to requests + BeautifulSoup.
-# To use locally: pip install playwright && playwright install chromium
-playwright
+# NOTE: playwright is intentionally excluded here.
+# It requires browser binaries (~300MB) and cannot run on Vercel serverless.
+# browser_scraper.py falls back to requests + BeautifulSoup automatically.

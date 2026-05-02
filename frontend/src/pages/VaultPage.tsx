@@ -11,6 +11,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { apiClient } from '@/lib/apiClient';
+import { auth } from '@/lib/firebase';
 
 // Shadcn primitives (simulated UI without full Radix install overhead for now)
 function Dialog({ open, onClose, output }: { open: boolean; onClose: () => void; output: Output | null }) {
@@ -20,8 +21,21 @@ function Dialog({ open, onClose, output }: { open: boolean; onClose: () => void;
     if (!output) return;
     try {
       setDownloading(true);
-      const res = await apiClient.get(output.docxUrl, { responseType: 'blob' });
-      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      // Always build URL from output.id — never trust docxUrl which may be
+      // a stale localhost path from an older DB record.
+      const backendBase = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+      const downloadUrl = `${backendBase}/api/outputs/${output.id}/download`;
+
+      await auth.authStateReady();
+      const idToken = await auth.currentUser?.getIdToken();
+
+      const res = await fetch(downloadUrl, {
+        headers: idToken ? { Authorization: `Bearer ${idToken}` } : {},
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -32,7 +46,7 @@ function Dialog({ open, onClose, output }: { open: boolean; onClose: () => void;
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Download failed', err);
-      alert('Failed to download document.');
+      alert('Download failed. Please try again.');
     } finally {
       setDownloading(false);
     }

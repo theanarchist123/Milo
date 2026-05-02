@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { FileText, Download, Eye, Clock } from 'lucide-react';
 import { cn, timeAgo, formatFileSize, formatDate } from '@/lib/utils';
 import type { Output, OutputType } from '@/types';
-import { apiClient } from '@/lib/apiClient';
+import { auth } from '@/lib/firebase';
 import { useState } from 'react';
 
 const TYPE_BADGE: Record<OutputType, string> = {
@@ -31,8 +31,22 @@ export function OutputCard({ output, onPreview, index }: OutputCardProps) {
   const handleDownload = async () => {
     try {
       setDownloading(true);
-      const res = await apiClient.get(output.docxUrl, { responseType: 'blob' });
-      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+      // Build a fully-qualified download URL so we never accidentally hit
+      // localhost (old stale URLs in DB) or double-prefix /api.
+      const backendBase = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+      const downloadUrl = `${backendBase}/api/outputs/${output.id}/download`;
+
+      // We need the Firebase ID token to authenticate the request.
+      await auth.authStateReady();
+      const idToken = await auth.currentUser?.getIdToken();
+
+      const res = await fetch(downloadUrl, {
+        headers: idToken ? { Authorization: `Bearer ${idToken}` } : {},
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -43,7 +57,7 @@ export function OutputCard({ output, onPreview, index }: OutputCardProps) {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Download failed', err);
-      alert('Failed to download document.');
+      alert('Download failed. Please try again.');
     } finally {
       setDownloading(false);
     }

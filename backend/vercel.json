@@ -2,8 +2,7 @@
   "version": 2,
   "functions": {
     "main.py": {
-      "maxDuration": 60,
-      "maxLambdaSize": "50mb"
+      "maxDuration": 60
     }
   },
   "routes": [

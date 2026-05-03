@@ -156,6 +156,9 @@ def fetch_emails_for_user(user_id: str, access_token: str) -> dict:
     Main entry point. Fetches up to MAX_EMAILS emails from Gmail and writes
     them (with extracted attachment URLs) to the database.
 
+    Optimized for serverless: pre-loads existing IDs, skips full-message fetch
+    for known emails, batches commits.
+
     Returns a summary dict: { fetched: int, saved: int, errors: int }
     """
     db: Session = SessionLocal()
@@ -180,13 +183,19 @@ def fetch_emails_for_user(user_id: str, access_token: str) -> dict:
         fetched = len(messages)
         logger.info(f"[Gmail] Found {fetched} messages to process.")
 
+        # Pre-load existing email IDs to skip API calls for known messages
+        existing_ids: set[str] = set(
+            row[0] for row in db.query(EmailRecord.id).filter(EmailRecord.owner_id == user_id).all()
+        )
+        skip_count = 0
+
         for msg_ref in messages:
             try:
                 msg_id = msg_ref["id"]
 
-                # Skip if we already have this email
-                existing = db.query(EmailRecord).filter(EmailRecord.id == msg_id).first()
-                if existing:
+                # Skip if we already have this email — no API call needed
+                if msg_id in existing_ids:
+                    skip_count += 1
                     continue
 
                 # Fetch full message
@@ -236,28 +245,36 @@ def fetch_emails_for_user(user_id: str, access_token: str) -> dict:
                     classification=None,
                 )
                 db.add(record)
-                db.commit()
+                existing_ids.add(msg_id)
                 saved += 1
+
+                # Commit every 5 saves to balance DB round-trips vs data safety
+                if saved % 5 == 0:
+                    db.commit()
+
                 logger.debug(f"[Gmail] Saved: {subject[:60]}")
 
-                # Auto-classify with AI (non-fatal if it fails)
-                try:
-                    from services.gemini_service import classify_content
-                    classification = classify_content(
-                        subject=subject,
-                        body=body_text[:2000],  # use plain body (no URLs) for classification
-                        sender=sender,
-                    )
-                    record.classification = classification
-                    record.status = "classified"
-                    db.commit()
-                except Exception as classify_err:
-                    logger.warning(f"[Gmail] Auto-classify failed for {msg_id}: {classify_err}")
+                # Auto-classify with AI — skip on serverless to save time
+                if not _is_vercel:
+                    try:
+                        from services.gemini_service import classify_content
+                        classification = classify_content(
+                            subject=subject,
+                            body=body_text[:2000],
+                            sender=sender,
+                        )
+                        record.classification = classification
+                        record.status = "classified"
+                    except Exception as classify_err:
+                        logger.warning(f"[Gmail] Auto-classify failed for {msg_id}: {classify_err}")
 
             except Exception as e:
                 errors += 1
                 logger.warning(f"[Gmail] Error processing message {msg_ref.get('id')}: {e}")
                 db.rollback()
+
+        # Final commit for any remaining records
+        db.commit()
 
     except Exception as e:
         logger.error(f"[Gmail] Fatal error during sync for user {user_id}: {e}")
@@ -265,5 +282,6 @@ def fetch_emails_for_user(user_id: str, access_token: str) -> dict:
     finally:
         db.close()
 
-    logger.info(f"[Gmail] Sync complete for {user_id}: fetched={fetched}, saved={saved}, errors={errors}")
+    logger.info(f"[Gmail] Sync complete for {user_id}: fetched={fetched}, saved={saved}, skipped={skip_count}, errors={errors}")
     return {"fetched": fetched, "saved": saved, "errors": errors}
+

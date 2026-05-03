@@ -110,8 +110,17 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
     Main entry point. Fetches courses, coursework, materials, and announcements
     from Google Classroom and upserts them into the database.
 
+    Optimized for serverless (Vercel):
+    - Reduced pageSize to keep Google API calls fast
+    - Batched DB commits (per-type, not per-item)
+    - Pre-loads existing IDs to avoid N+1 queries
+
     Returns: { courses: int, items: int, errors: int }
     """
+    import os
+    _is_vercel = bool(os.getenv("VERCEL"))
+    PAGE_SIZE = 20 if _is_vercel else 100
+
     db: Session = SessionLocal()
     courses_saved = 0
     items_saved = 0
@@ -121,10 +130,15 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
         service = _build_classroom_service(access_token)
 
         # ─── Step 1: List all active courses ──────────────────────────────
-        logger.info(f"[Classroom] Fetching courses for user {user_id}...")
+        logger.info(f"[Classroom] Fetching courses for user {user_id} (pageSize={PAGE_SIZE})...")
         response = service.courses().list(courseStates=["ACTIVE"]).execute()
         courses = response.get("courses", [])
         logger.info(f"[Classroom] Found {len(courses)} active courses.")
+
+        # Pre-load all existing CourseItem IDs for this user to avoid N+1 queries
+        existing_ids: set[str] = set(
+            row[0] for row in db.query(CourseItem.id).filter(CourseItem.owner_id == user_id).all()
+        )
 
         for course_data in courses:
             course_id = course_data["id"]
@@ -139,31 +153,37 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
             course.teacher = course_data.get("description", course_data.get("ownerId", ""))[:80]
             course.section = course_data.get("section", "")
             course.subject = course_data.get("name", "").lower()
-            db.commit()
             courses_saved += 1
+
+        # Batch commit all courses at once
+        db.commit()
+
+        for course_data in courses:
+            course_id = course_data["id"]
+            course_name = course_data.get("name", "?")[:40]
 
             # ─── Step 2: Fetch coursework ─────────────────────────────────
             try:
                 cw_response = service.courses().courseWork().list(
                     courseId=course_id,
                     orderBy="updateTime desc",
-                    pageSize=100,
+                    pageSize=PAGE_SIZE,
                 ).execute()
                 courseworks = cw_response.get("courseWork", [])
-                logger.info(f"[Classroom] Course {course_id}: {len(courseworks)} coursework items")
+                logger.info(f"[Classroom] {course_name}: {len(courseworks)} coursework")
 
                 for cw in courseworks:
                     cw_id = cw["id"]
                     mat_urls = _extract_material_urls(cw.get("materials", []))
                     description = _build_description(cw.get("description", ""), mat_urls)
 
-                    existing = db.query(CourseItem).filter(CourseItem.id == cw_id).first()
-                    if existing:
-                        # Update in case teacher edited the item or added attachments
-                        existing.title = cw.get("title", existing.title)
-                        existing.description = description
-                        existing.due_date = _parse_due_date(cw)
-                        db.commit()
+                    if cw_id in existing_ids:
+                        # Update in case teacher edited
+                        existing = db.query(CourseItem).filter(CourseItem.id == cw_id).first()
+                        if existing:
+                            existing.title = cw.get("title", existing.title)
+                            existing.description = description
+                            existing.due_date = _parse_due_date(cw)
                     else:
                         item = CourseItem(
                             id=cw_id,
@@ -176,12 +196,14 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                             status="fetched",
                         )
                         db.add(item)
-                        db.commit()
+                        existing_ids.add(cw_id)
                         items_saved += 1
-                        logger.info(f"[Classroom] New coursework: '{cw.get('title', '')[:60]}' | attachments={len(mat_urls)}")
+                        logger.info(f"[Classroom] + coursework: '{cw.get('title', '')[:50]}' ({len(mat_urls)} attachments)")
+
+                db.commit()  # Batch commit per course per type
 
             except Exception as e:
-                logger.warning(f"[Classroom] Error fetching coursework for course {course_id}: {e}")
+                logger.warning(f"[Classroom] Error fetching coursework for {course_name}: {e}")
                 errors += 1
                 db.rollback()
 
@@ -190,21 +212,21 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                 mat_response = service.courses().courseWorkMaterials().list(
                     courseId=course_id,
                     orderBy="updateTime desc",
-                    pageSize=100,
+                    pageSize=PAGE_SIZE,
                 ).execute()
                 materials = mat_response.get("courseWorkMaterial", [])
-                logger.info(f"[Classroom] Course {course_id}: {len(materials)} materials")
+                logger.info(f"[Classroom] {course_name}: {len(materials)} materials")
 
                 for mat in materials:
                     mat_id = mat["id"]
                     mat_urls = _extract_material_urls(mat.get("materials", []))
                     description = _build_description(mat.get("description", ""), mat_urls)
 
-                    existing = db.query(CourseItem).filter(CourseItem.id == mat_id).first()
-                    if existing:
-                        existing.title = mat.get("title", existing.title)
-                        existing.description = description
-                        db.commit()
+                    if mat_id in existing_ids:
+                        existing = db.query(CourseItem).filter(CourseItem.id == mat_id).first()
+                        if existing:
+                            existing.title = mat.get("title", existing.title)
+                            existing.description = description
                     else:
                         item = CourseItem(
                             id=mat_id,
@@ -217,12 +239,14 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                             status="fetched",
                         )
                         db.add(item)
-                        db.commit()
+                        existing_ids.add(mat_id)
                         items_saved += 1
-                        logger.info(f"[Classroom] New material: '{mat.get('title', '')[:60]}' | attachments={len(mat_urls)}")
+                        logger.info(f"[Classroom] + material: '{mat.get('title', '')[:50]}' ({len(mat_urls)} attachments)")
+
+                db.commit()
 
             except Exception as e:
-                logger.warning(f"[Classroom] Error fetching materials for course {course_id}: {e}")
+                logger.warning(f"[Classroom] Error fetching materials for {course_name}: {e}")
                 errors += 1
                 db.rollback()
 
@@ -231,10 +255,10 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                 ann_response = service.courses().announcements().list(
                     courseId=course_id,
                     orderBy="updateTime desc",
-                    pageSize=100,
+                    pageSize=PAGE_SIZE,
                 ).execute()
                 announcements = ann_response.get("announcements", [])
-                logger.info(f"[Classroom] Course {course_id}: {len(announcements)} announcements")
+                logger.info(f"[Classroom] {course_name}: {len(announcements)} announcements")
 
                 for ann in announcements:
                     ann_id = ann["id"]
@@ -243,11 +267,11 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                     description = _build_description(ann_text, mat_urls)
                     title = ann_text[:200] if ann_text else "Announcement"
 
-                    existing = db.query(CourseItem).filter(CourseItem.id == ann_id).first()
-                    if existing:
-                        existing.title = title
-                        existing.description = description
-                        db.commit()
+                    if ann_id in existing_ids:
+                        existing = db.query(CourseItem).filter(CourseItem.id == ann_id).first()
+                        if existing:
+                            existing.title = title
+                            existing.description = description
                     else:
                         item = CourseItem(
                             id=ann_id,
@@ -260,12 +284,14 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                             status="fetched",
                         )
                         db.add(item)
-                        db.commit()
+                        existing_ids.add(ann_id)
                         items_saved += 1
-                        logger.info(f"[Classroom] New announcement: '{title[:60]}' | attachments={len(mat_urls)}")
+                        logger.info(f"[Classroom] + announcement: '{title[:50]}' ({len(mat_urls)} attachments)")
+
+                db.commit()
 
             except Exception as e:
-                logger.warning(f"[Classroom] Error fetching announcements for course {course_id}: {e}")
+                logger.warning(f"[Classroom] Error fetching announcements for {course_name}: {e}")
                 errors += 1
                 db.rollback()
 
@@ -279,3 +305,4 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
         f"[Classroom] Sync complete for {user_id}: courses={courses_saved}, new_items={items_saved}, errors={errors}"
     )
     return {"courses": courses_saved, "items": items_saved, "errors": errors}
+

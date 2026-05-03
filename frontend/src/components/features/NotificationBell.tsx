@@ -23,7 +23,7 @@ const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL
   : 'http://localhost:8000';
 
 /** Polling interval in milliseconds when SSE is unavailable */
-const POLL_INTERVAL_MS = 10_000;
+const POLL_INTERVAL_MS = 30_000;
 
 export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);

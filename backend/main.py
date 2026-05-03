@@ -55,7 +55,13 @@ def run_migrations():
 
 
 # Create all tables (new tables only — won't touch existing ones)
-Base.metadata.create_all(bind=engine)
+# On Vercel, tables already exist in Supabase. create_all is idempotent but
+# costs a DB connection; wrap it so a transient connection error during cold-start
+# doesn't crash the entire function before it can serve a single request.
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as _e:
+    logger.warning(f"[App] create_all failed (will retry on next request): {_e}")
 
 # SQLite-only additive migrations (Postgres tables are created correctly by create_all)
 if _is_sqlite:

@@ -160,12 +160,17 @@ def get_me(current_user: User = Depends(get_current_user)):
 
 
 @router.get("/connection-status")
-def connection_status(current_user: User = Depends(get_current_user)):
+def connection_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """
     Tests the stored Google OAuth access token against Gmail and Classroom APIs.
     Returns live connected/error status for each service.
+    Auto-refreshes expired tokens before testing.
     """
-    has_token = bool(current_user.google_access_token)
+    from services.token_refresher import get_valid_access_token as _get_valid_token
+    
+    # Try to refresh the token first so we test with a valid one
+    access_token = _get_valid_token(current_user, db)
+    has_token = bool(access_token)
     gmail_ok, classroom_ok = False, False
     gmail_error, classroom_error = None, None
 
@@ -173,7 +178,7 @@ def connection_status(current_user: User = Depends(get_current_user)):
         try:
             from googleapiclient.discovery import build
             from google.oauth2.credentials import Credentials
-            creds = Credentials(token=current_user.google_access_token)
+            creds = Credentials(token=access_token)
 
             try:
                 gmail_svc = build("gmail", "v1", credentials=creds, cache_discovery=False)

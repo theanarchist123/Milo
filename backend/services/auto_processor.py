@@ -32,12 +32,18 @@ MAX_ITEMS_PER_CYCLE = 10
 
 
 import threading
+import os
 
 # Global lock to prevent overlapping autopilot cycles causing 429 concurrency errors on Ollama API
 _cycle_lock = threading.Lock()
 
 def run_auto_processing_cycle():
     """Runs periodically via APScheduler. Processes all enabled users sequentially."""
+
+    # Acquire lock at the cycle level — prevents overlapping cycles entirely
+    if not _cycle_lock.acquire(blocking=False):
+        logger.warning("[AutoProcessor] Previous cycle still running. Skipping.")
+        return
 
     try:
         logger.info("[AutoProcessor] ═══ Starting auto-processing cycle ═══")
@@ -61,16 +67,10 @@ def run_auto_processing_cycle():
 
 def _process_user(db, user: User):
     """Process a single user: sync → find pending items → generate → notify."""
-    
-    # Block overlapping API calls if the user rapidly clicks 'Run Now' or if the background cycle triggers
-    if not _cycle_lock.acquire(blocking=False):
-        logger.warning(f"[AutoProcessor] Already processing. Ignoring overlapping request for user {user.email}.")
-        return
-        
-    # ── Guard: skip if no Google token ──────────────────────────────────
-    if not user.google_access_token:
-        logger.warning(f"[AutoProcessor] Skipping {user.email}: no Google OAuth token")
-        _cycle_lock.release()
+
+    # ── Guard: skip if no Google token at all ───────────────────────────
+    if not user.google_access_token and not user.google_refresh_token:
+        logger.warning(f"[AutoProcessor] Skipping {user.email}: no Google OAuth token or refresh token")
         return
 
     # ── Guard: Respect User's Interval Setting ──────────────────────────
@@ -79,11 +79,17 @@ def _process_user(db, user: User):
         elapsed_mins = (dt.datetime.utcnow() - user.last_sync_time).total_seconds() / 60.0
         if elapsed_mins < interval:
             logger.info(f"[AutoProcessor] Skipping {user.email}: Not time yet (elapsed {elapsed_mins:.1f}m < {interval}m)")
-            _cycle_lock.release()
             return
 
     user.last_sync_time = dt.datetime.utcnow()
     db.commit()
+
+    # ── Refresh access token before doing any API calls ─────────────────
+    from services.token_refresher import get_valid_access_token
+    access_token = get_valid_access_token(user, db)
+    if not access_token:
+        logger.warning(f"[AutoProcessor] Skipping {user.email}: token refresh failed. User must sign in again.")
+        return
 
     logger.info(f"[AutoProcessor] Processing user: {user.email}")
     items_processed = 0
@@ -91,13 +97,13 @@ def _process_user(db, user: User):
     # ── Step 1: Sync Gmail & Classroom ──────────────────────────────────
     try:
         logger.info(f"[AutoProcessor]   → Syncing Gmail...")
-        fetch_emails_for_user(user.id, user.google_access_token)
+        fetch_emails_for_user(user.id, access_token)
     except Exception as e:
         logger.warning(f"[AutoProcessor]   Gmail sync failed: {e}")
 
     try:
         logger.info(f"[AutoProcessor]   → Syncing Classroom...")
-        fetch_classroom_for_user(user.id, user.google_access_token)
+        fetch_classroom_for_user(user.id, access_token)
     except Exception as e:
         logger.warning(f"[AutoProcessor]   Classroom sync failed: {e}")
 
@@ -121,7 +127,7 @@ def _process_user(db, user: User):
         if items_processed >= MAX_ITEMS_PER_CYCLE:
             logger.info(f"[AutoProcessor]   Hit per-cycle limit ({MAX_ITEMS_PER_CYCLE}), deferring rest to next cycle")
             break
-        _process_course_item_safe(db, user, item)
+        _process_course_item_safe(db, user, item, access_token)
         items_processed += 1
         time.sleep(INTER_CALL_DELAY_SECONDS)
 
@@ -146,12 +152,11 @@ def _process_user(db, user: User):
             logger.debug(f"[AutoProcessor]   Skipped non-academic email: {email.subject[:50]}")
             continue
 
-        _process_email_safe(db, user, email)
+        _process_email_safe(db, user, email, access_token)
         items_processed += 1
         time.sleep(INTER_CALL_DELAY_SECONDS)
 
     logger.info(f"[AutoProcessor]   User {user.email}: processed {items_processed} item(s) this cycle")
-    _cycle_lock.release()
 
 
 def _is_email_worth_processing(email: EmailRecord) -> bool:
@@ -223,7 +228,7 @@ def _looks_academic(email: EmailRecord) -> bool:
     return False
 
 
-def _process_course_item_safe(db, user: User, item: CourseItem):
+def _process_course_item_safe(db, user: User, item: CourseItem, access_token: str):
     """Process a single classroom item with full error handling + notifications."""
     # Mark as processed immediately so we don't pick it up again
     item.auto_processed = True
@@ -266,7 +271,7 @@ def _process_course_item_safe(db, user: User, item: CourseItem):
             content=content,
             output_type=output_type,
             roll_number=user.roll_number or "",
-            access_token=user.google_access_token or "",
+            access_token=access_token,
         )
 
         if "error" in generated:
@@ -304,7 +309,7 @@ def _process_course_item_safe(db, user: User, item: CourseItem):
         _notify_user_failure(db, user, task.source_subject, str(e))
 
 
-def _process_email_safe(db, user: User, email: EmailRecord):
+def _process_email_safe(db, user: User, email: EmailRecord, access_token: str):
     """Process a single email with full error handling + notifications."""
     email.auto_processed = True
     db.commit()
@@ -361,7 +366,7 @@ def _process_email_safe(db, user: User, email: EmailRecord):
             content=content,
             output_type=output_type,
             roll_number=user.roll_number or "",
-            access_token=user.google_access_token or "",
+            access_token=access_token,
         )
 
         if "error" in generated:
@@ -414,6 +419,12 @@ def _notify_user_success(db, user: User, subject: str, doc_type: str, file_path:
     create_notification(db, user.id, title, body, "SUCCESS", "/files")
 
     # 2. Email (best-effort)
+    # Use FRONTEND_ORIGIN from env so the link works in both dev and production
+    frontend_origin = os.getenv("FRONTEND_ORIGIN", "").strip()
+    if not frontend_origin:
+        frontend_origin = "http://localhost:5173"
+    vault_url = f"{frontend_origin.rstrip('/')}/files"
+
     html_content = f"""
     <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; text-align: center;">
         <h2 style="color: #10B981;">✅ Miro AI Autopilot</h2>
@@ -422,7 +433,7 @@ def _notify_user_success(db, user: User, subject: str, doc_type: str, file_path:
             <p><strong>Source:</strong> {clean_subject}</p>
             <p><strong>Type:</strong> {doc_type}</p>
         </div>
-        <a href="http://localhost:5173/files" style="display: inline-block; background: #10B981; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">View in The Vault</a>
+        <a href="{vault_url}" style="display: inline-block; background: #10B981; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">View in The Vault</a>
         <p style="margin-top: 30px; font-size: 12px; color: #888;">You are receiving this because Autopilot is enabled in your Miro Settings.</p>
     </div>
     """

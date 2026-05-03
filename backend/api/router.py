@@ -221,10 +221,11 @@ def trigger_gmail_sync(
     current_user: User = Depends(get_current_user)
 ):
     """Synchronously fetch Gmail emails and return real stats."""
-    if not current_user.google_access_token:
+    access_token = get_valid_access_token(current_user, db)
+    if not access_token:
         return {"error": "no_token", "message": "No Google OAuth token. Sign out and sign in again."}
     try:
-        result = fetch_emails_for_user(current_user.id, current_user.google_access_token)
+        result = fetch_emails_for_user(current_user.id, access_token)
         return {"status": "ok", "gmail": result}
     except Exception as e:
         return {"status": "error", "gmail": _token_error_response("Gmail", e)}
@@ -236,10 +237,11 @@ def trigger_classroom_sync(
     current_user: User = Depends(get_current_user)
 ):
     """Synchronously fetch Classroom data and return real stats."""
-    if not current_user.google_access_token:
+    access_token = get_valid_access_token(current_user, db)
+    if not access_token:
         return {"error": "no_token", "message": "No Google OAuth token. Sign out and sign in again."}
     try:
-        result = fetch_classroom_for_user(current_user.id, current_user.google_access_token)
+        result = fetch_classroom_for_user(current_user.id, access_token)
         return {"status": "ok", "classroom": result}
     except Exception as e:
         return {"status": "error", "classroom": _token_error_response("Classroom", e)}
@@ -373,6 +375,9 @@ def process_email(
     db.commit()
 
     try:
+        # Refresh token before making API calls
+        access_token = get_valid_access_token(current_user, db) or ""
+
         # Step 1: Classify
         task.status = "CLASSIFYING"
         task.current_step = "Analyzing content with Gemini AI"
@@ -397,7 +402,7 @@ def process_email(
             title=email.subject or "Email",
             content=email.body_text or "",
             output_type=output_type,
-            access_token=current_user.google_access_token or "",
+            access_token=access_token,
         )
 
         if "error" in generated:
@@ -490,6 +495,9 @@ def process_classroom_item(
     db.commit()
 
     try:
+        # Refresh token before making API calls
+        access_token = get_valid_access_token(current_user, db) or ""
+
         # Step 1: Classify
         task.status = "CLASSIFYING"
         task.current_step = "Classifying with Gemini AI"
@@ -512,7 +520,7 @@ def process_classroom_item(
             content=content,
             output_type=output_type,
             roll_number=roll_number,
-            access_token=current_user.google_access_token or "",
+            access_token=access_token,
         )
 
         if "error" in generated:

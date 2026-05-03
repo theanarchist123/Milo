@@ -44,5 +44,7 @@ googleProvider.addScope('https://www.googleapis.com/auth/classroom.courseworkmat
 googleProvider.addScope('https://www.googleapis.com/auth/classroom.announcements.readonly');
 // Drive — for downloading attachments
 googleProvider.addScope('https://www.googleapis.com/auth/drive.readonly');
-// Force account selection so the OAuth scopes are always re-granted on sign-in
-googleProvider.setCustomParameters({ prompt: 'consent select_account' });
+// Force account selection + consent so OAuth scopes are always re-granted,
+// and request offline access so Google returns a refresh token that the backend
+// can use to silently refresh the access token after it expires (~1 hour).
+googleProvider.setCustomParameters({ prompt: 'consent select_account', access_type: 'offline' });

@@ -40,9 +40,9 @@ export function Sidebar() {
     setSyncResult(null);
 
     try {
-      // Sync is now synchronous on the backend — use a 90s timeout since
-      // fetching 100 emails + multiple courses can take 20-40 seconds.
-      const res = await apiClient.post('/sync/all', {}, { timeout: 90_000 });
+      // Sync is now synchronous on the backend — use a 300s timeout since
+      // fetching 100 emails + multiple courses can take 60-120 seconds locally.
+      const res = await apiClient.post('/sync/all', {}, { timeout: 300_000 });
       const data = res.data;
 
       // Check for errors
@@ -232,14 +232,14 @@ export function Sidebar() {
           </AnimatePresence>
         </button>
 
-        {/* Progress bar shown while syncing — matches the 90s API timeout */}
+        {/* Progress bar shown while syncing — matches the 300s API timeout */}
         {syncState === 'syncing' && sidebarOpen && (
           <div className="h-1 rounded-full bg-border overflow-hidden">
             <motion.div
               className="h-full bg-emerald rounded-full"
               initial={{ width: '2%' }}
               animate={{ width: '92%' }}
-              transition={{ duration: 85, ease: 'easeOut' }}
+              transition={{ duration: 295, ease: 'easeOut' }}
             />
           </div>
         )}

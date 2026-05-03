@@ -253,10 +253,11 @@ def trigger_full_sync(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Synchronously run Gmail + Classroom sync in sequence.
+    Synchronously run Classroom + Gmail sync in sequence.
+    Classroom runs FIRST because it's the core MVP feature.
     Returns real stats: how many emails/courses were fetched, and any errors.
-    This is intentionally synchronous so the frontend receives actual results.
     """
+
     if not current_user.google_access_token and not current_user.google_refresh_token:
         return {
             "status": "error",
@@ -276,17 +277,24 @@ def trigger_full_sync(
     gmail_result: dict = {}
     classroom_result: dict = {}
 
-    try:
-        gmail_result = fetch_emails_for_user(current_user.id, access_token)
-    except Exception as e:
-        gmail_result = _token_error_response("Gmail", e)
-
+    # ── Classroom FIRST — this is the core MVP ──────────────────────────
+    logger.info(f"[Sync] Starting Classroom sync for {current_user.email}...")
     try:
         classroom_result = fetch_classroom_for_user(current_user.id, access_token)
     except Exception as e:
+        logger.error(f"[Sync] Classroom sync exception: {e}")
         classroom_result = _token_error_response("Classroom", e)
 
+    # ── Gmail second — limit on serverless to avoid timeout ─────────────
+    logger.info(f"[Sync] Starting Gmail sync for {current_user.email}...")
+    try:
+        gmail_result = fetch_emails_for_user(current_user.id, access_token)
+    except Exception as e:
+        logger.error(f"[Sync] Gmail sync exception: {e}")
+        gmail_result = _token_error_response("Gmail", e)
+
     has_error = ("error" in gmail_result) or ("error" in classroom_result)
+    logger.info(f"[Sync] Complete for {current_user.email}: classroom={classroom_result}, gmail={gmail_result}")
     return {
         "status": "error" if has_error else "ok",
         "gmail": gmail_result,

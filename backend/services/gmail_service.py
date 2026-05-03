@@ -11,6 +11,7 @@ Key improvements:
 import base64
 import datetime
 import logging
+import os
 import re
 from typing import Optional
 
@@ -23,7 +24,10 @@ from models import User, EmailRecord
 
 logger = logging.getLogger(__name__)
 
-MAX_EMAILS = 100  # Max emails to fetch per sync
+# Max emails to fetch per sync — reduced on serverless to avoid timeout
+# (each email requires a full message fetch = ~0.3-0.5s per message)
+_is_vercel = bool(os.getenv("VERCEL"))
+MAX_EMAILS = 20 if _is_vercel else 100
 
 # Regex to pull any https:// URL out of text (used when extracting from HTML parts)
 _URL_RE = re.compile(r'https?://[^\s<>"\']+')

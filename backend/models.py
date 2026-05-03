@@ -60,6 +60,7 @@ class CourseItem(Base):
     due_date = Column(DateTime, nullable=True)
     status = Column(String, default="fetched")
     auto_processed = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     course = relationship("Course", back_populates="items")
 

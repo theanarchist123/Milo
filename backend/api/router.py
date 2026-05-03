@@ -313,7 +313,7 @@ def get_course_items(
     items = db.query(CourseItem).filter(
         CourseItem.course_id == course_id,
         CourseItem.owner_id == current_user.id
-    ).all()
+    ).order_by(CourseItem.created_at.desc()).all()
     return [
         {
             "id": item.id,
@@ -324,6 +324,7 @@ def get_course_items(
             "dueDate": item.due_date.isoformat() if item.due_date else None,
             "attachments": [],
             "status": item.status,
+            "createdAt": item.created_at.isoformat() if item.created_at else None,
         } for item in items
     ]
 

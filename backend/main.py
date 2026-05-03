@@ -41,17 +41,18 @@ def run_migrations():
         # course_items table additions
         "ALTER TABLE course_items ADD COLUMN owner_id VARCHAR REFERENCES users(id)",
         "ALTER TABLE course_items ADD COLUMN auto_processed BOOLEAN DEFAULT 0",
+        "ALTER TABLE course_items ADD COLUMN created_at TIMESTAMP",
         # emails table additions
         "ALTER TABLE emails ADD COLUMN auto_processed BOOLEAN DEFAULT 0",
         # tasks table additions
         "ALTER TABLE tasks ADD COLUMN error_message TEXT",
     ]
-    with engine.begin() as conn:
-        for sql in missing_columns:
-            try:
+    for sql in missing_columns:
+        try:
+            with engine.begin() as conn:
                 conn.execute(text(sql))
-            except Exception:
-                pass  # Column already exists — safe to skip
+        except Exception:
+            pass  # Column already exists or other error — safe to skip
 
 
 # Create all tables (new tables only — won't touch existing ones)
@@ -63,9 +64,8 @@ try:
 except Exception as _e:
     logger.warning(f"[App] create_all failed (will retry on next request): {_e}")
 
-# SQLite-only additive migrations (Postgres tables are created correctly by create_all)
-if _is_sqlite:
-    run_migrations()
+# Run additive migrations unconditionally since create_all doesn't add missing columns
+run_migrations()
 
 # Ensure the media directory exists for file storage (local dev only)
 # On Vercel the filesystem is read-only/ephemeral — skip this.

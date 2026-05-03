@@ -53,6 +53,18 @@ def _parse_due_date(coursework: dict) -> datetime.datetime | None:
         return None
 
 
+def _parse_update_time(item_dict: dict) -> datetime.datetime:
+    """Extract updateTime or creationTime and return a naive datetime."""
+    time_str = item_dict.get("updateTime") or item_dict.get("creationTime")
+    if not time_str:
+        return datetime.datetime.utcnow()
+    try:
+        time_str = time_str.replace("Z", "+00:00")
+        return datetime.datetime.fromisoformat(time_str).replace(tzinfo=None)
+    except Exception:
+        return datetime.datetime.utcnow()
+
+
 def _extract_material_urls(materials: list) -> list[str]:
     """
     Pull every accessible URL out of a Classroom `materials` list.
@@ -184,6 +196,7 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                             existing.title = cw.get("title", existing.title)
                             existing.description = description
                             existing.due_date = _parse_due_date(cw)
+                            existing.created_at = _parse_update_time(cw)
                     else:
                         item = CourseItem(
                             id=cw_id,
@@ -194,6 +207,7 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                             description=description,
                             due_date=_parse_due_date(cw),
                             status="fetched",
+                            created_at=_parse_update_time(cw),
                         )
                         db.add(item)
                         existing_ids.add(cw_id)
@@ -227,6 +241,7 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                         if existing:
                             existing.title = mat.get("title", existing.title)
                             existing.description = description
+                            existing.created_at = _parse_update_time(mat)
                     else:
                         item = CourseItem(
                             id=mat_id,
@@ -237,6 +252,7 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                             description=description,
                             due_date=None,
                             status="fetched",
+                            created_at=_parse_update_time(mat),
                         )
                         db.add(item)
                         existing_ids.add(mat_id)
@@ -272,6 +288,7 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                         if existing:
                             existing.title = title
                             existing.description = description
+                            existing.created_at = _parse_update_time(ann)
                     else:
                         item = CourseItem(
                             id=ann_id,
@@ -282,6 +299,7 @@ def fetch_classroom_for_user(user_id: str, access_token: str) -> dict:
                             description=description,
                             due_date=None,
                             status="fetched",
+                            created_at=_parse_update_time(ann),
                         )
                         db.add(item)
                         existing_ids.add(ann_id)

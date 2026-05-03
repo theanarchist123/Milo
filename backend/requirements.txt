@@ -8,6 +8,7 @@ apscheduler
 requests
 beautifulsoup4
 python-docx
+PyPDF2
 
 # Google API access (Gmail, Classroom, Drive + Firebase token verification)
 google-api-python-client

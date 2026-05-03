@@ -377,6 +377,37 @@ def _expand_urls_in_content(content: str, access_token: str = "") -> str:
                 if res.status_code == 200:
                     logger.info(f"[DriveAPI] Downloaded {name} ({mime_type})")
                     return f"\n\n[Content from File '{name}' ({url}):\n{res.text[:15000]}\n]"
+                    
+            elif 'application/pdf' in mime_type:
+                dl_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+                res = requests.get(dl_url, headers=headers, timeout=20)
+                if res.status_code == 200:
+                    try:
+                        import PyPDF2
+                        import io
+                        reader = PyPDF2.PdfReader(io.BytesIO(res.content))
+                        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+                        logger.info(f"[DriveAPI] Parsed PDF {name} ({len(text)} chars)")
+                        return f"\n\n[Content from PDF '{name}' ({url}):\n{text[:20000]}\n]"
+                    except Exception as e:
+                        logger.warning(f"[DriveAPI] Failed to parse PDF {name}: {e}")
+                        return None
+                        
+            elif 'wordprocessingml.document' in mime_type:
+                dl_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+                res = requests.get(dl_url, headers=headers, timeout=20)
+                if res.status_code == 200:
+                    try:
+                        import docx
+                        import io
+                        doc = docx.Document(io.BytesIO(res.content))
+                        text = "\n".join(p.text for p in doc.paragraphs)
+                        logger.info(f"[DriveAPI] Parsed DOCX {name} ({len(text)} chars)")
+                        return f"\n\n[Content from DOCX '{name}' ({url}):\n{text[:20000]}\n]"
+                    except Exception as e:
+                        logger.warning(f"[DriveAPI] Failed to parse DOCX {name}: {e}")
+                        return None
+
             else:
                 logger.warning(f"[DriveAPI] Unsupported mimeType {mime_type} for {file_id}")
                 return None

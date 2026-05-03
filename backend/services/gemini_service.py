@@ -340,9 +340,56 @@ def _expand_urls_in_content(content: str, access_token: str = "") -> str:
         auth_headers["Authorization"] = f"Bearer {access_token}"
         logger.info("[URLExpander] Using OAuth token for authenticated Google requests")
 
+    def _fetch_with_drive_api(url: str, token: str) -> str | None:
+        """Use the official Google Drive API to export the file content using the user's OAuth token."""
+        m = re.search(r'/d/([a-zA-Z0-9_-]+)', url) or re.search(r'[?&]id=([a-zA-Z0-9_-]+)', url)
+        if not m:
+            return None
+        file_id = m.group(1)
+        
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        try:
+            meta_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?fields=mimeType,name"
+            r = requests.get(meta_url, headers=headers, timeout=10)
+            if r.status_code != 200:
+                logger.warning(f"[DriveAPI] Metadata fetch failed for {file_id}: {r.status_code}")
+                return None
+                
+            meta = r.json()
+            mime_type = meta.get('mimeType', '')
+            name = meta.get('name', 'document')
+            
+            if mime_type.startswith('application/vnd.google-apps.'):
+                export_mime = 'text/csv' if mime_type == 'application/vnd.google-apps.spreadsheet' else 'text/plain'
+                export_url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export?mimeType={export_mime}"
+                res = requests.get(export_url, headers=headers, timeout=15)
+                if res.status_code == 200:
+                    logger.info(f"[DriveAPI] Exported {name} ({mime_type})")
+                    return f"\n\n[Content from Google Workspace File '{name}' ({url}):\n{res.text[:15000]}\n]"
+                else:
+                    logger.warning(f"[DriveAPI] Export failed: {res.status_code}")
+                    return None
+                    
+            elif 'text' in mime_type or 'csv' in mime_type or 'json' in mime_type:
+                dl_url = f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media"
+                res = requests.get(dl_url, headers=headers, timeout=15)
+                if res.status_code == 200:
+                    logger.info(f"[DriveAPI] Downloaded {name} ({mime_type})")
+                    return f"\n\n[Content from File '{name}' ({url}):\n{res.text[:15000]}\n]"
+            else:
+                logger.warning(f"[DriveAPI] Unsupported mimeType {mime_type} for {file_id}")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"[DriveAPI] Exception fetching {file_id}: {e}")
+            return None
+            
+        return None
+
     def _drive_file_to_export(url: str) -> str | None:
         """Convert a drive.google.com/file/d/<ID>/... link to a direct download URL."""
-        m = re.search(r'/file/d/([a-zA-Z0-9_-]+)', url)
+        m = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
         if m:
             file_id = m.group(1)
             return f"https://drive.google.com/uc?export=download&id={file_id}"
@@ -350,6 +397,13 @@ def _expand_urls_in_content(content: str, access_token: str = "") -> str:
 
     def _fetch_url(url: str) -> str | None:
         try:
+            # 1. Try Drive API first if it's a Google URL and we have a token
+            if access_token and ('docs.google.com/' in url or 'drive.google.com/' in url):
+                drive_content = _fetch_with_drive_api(url, access_token)
+                if drive_content:
+                    return drive_content
+                logger.info(f"[URLExpander] Drive API failed for {url}, falling back to scraper")
+
             if 'docs.google.com/' in url:
                 # Google Docs/Sheets/Slides/Forms — use browser scraper
                 # Pass auth headers for authenticated access to private docs

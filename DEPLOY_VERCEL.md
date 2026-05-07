@@ -40,7 +40,8 @@ Add these in the Vercel project settings → Environment Variables:
 | `FIREBASE_PROJECT_ID` | Your Firebase project ID | ✅ |
 | `OLLAMA_API_KEY` | Your Ollama API key | ✅ |
 | `OLLAMA_ENDPOINT` | `https://ollama.com/v1/chat/completions` | ✅ |
-| `OLLAMA_MODEL` | `deepseek-v3.1:671b` | ✅ |
+| `OLLAMA_MODEL` | `llama3.2:3b` | ✅ |
+| `OLLAMA_FALLBACK_MODELS` | `llama3.2:3b,qwen2.5:7b` | Optional |
 | `FRONTEND_ORIGIN` | Your frontend Vercel URL (e.g. `https://miro-ai.vercel.app`) | ✅ |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins | Optional |
 | `CORS_ALLOWED_ORIGIN_REGEX` | Regex for allowed origins | Optional |

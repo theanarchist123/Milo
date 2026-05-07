@@ -3,7 +3,7 @@ Ollama API Service — classification and content generation.
 
 Replaces Gemini with Ollama Cloud API due to Gemini quota failures.
 Endpoints: https://ollama.com/v1/chat/completions (OpenAI compatible)
-Model: deepseek-v3.1:671b
+Primary model: a free/open default so first-time setups do not hit subscription-gated models.
 """
 import os
 import json
@@ -24,56 +24,89 @@ logger = logging.getLogger(__name__)
 # ─── Configure Ollama API ───────────────────────────────────────────────────
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "").strip()
 OLLAMA_ENDPOINT = os.getenv("OLLAMA_ENDPOINT", "https://ollama.com/v1/chat/completions").strip()
-MODEL_NAME = os.getenv("OLLAMA_MODEL", "deepseek-v3.1:671b").strip()
+MODEL_NAME = os.getenv("OLLAMA_MODEL", "llama3.2:3b").strip()
+FALLBACK_MODELS = [
+    model.strip()
+    for model in os.getenv("OLLAMA_FALLBACK_MODELS", "llama3.2:3b,qwen2.5:7b").split(",")
+    if model.strip()
+]
+
+
+def _is_subscription_error(response: requests.Response) -> bool:
+    if response.status_code not in {402, 403}:
+        return False
+
+    body_text = response.text.lower()
+    return "subscription" in body_text or "requires a subscription" in body_text
+
+
+def _post_ollama_request(prompt: str, model_name: str, json_format: bool, max_tokens: int) -> str:
+    headers = {
+        "Authorization": f"Bearer {OLLAMA_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": max_tokens,
+        "temperature": 0.3,
+    }
+
+    if json_format:
+        payload["response_format"] = {"type": "json_object"}
+
+    response = requests.post(OLLAMA_ENDPOINT, headers=headers, json=payload, timeout=300)
+    response.raise_for_status()
+
+    data = response.json()
+    if "choices" in data and len(data["choices"]) > 0:
+        return data["choices"][0]["message"]["content"]
+
+    raise ValueError(f"Invalid API response: {data}")
 
 def _call_ollama(prompt: str, json_format: bool = False, max_tokens: int = 8192) -> str:
     """Wrapper to call Ollama Chat Completions"""
     if not OLLAMA_API_KEY:
         raise ValueError("OLLAMA_API_KEY is not set. Configure it in backend/.env.local for local or Vercel env vars for production.")
 
-    headers = {
-        "Authorization": f"Bearer {OLLAMA_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": MODEL_NAME,
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "max_tokens": max_tokens,
-        "temperature": 0.3
-    }
-    
-    if json_format:
-        payload["response_format"] = {"type": "json_object"}
+    models_to_try = [MODEL_NAME] + [model for model in FALLBACK_MODELS if model != MODEL_NAME]
 
-    # Retry logic for network or 429 errors (ghost connection lockouts can take up to 90s to clear)
-    for attempt in range(7):
-        try:
-            # Increase timeout to 300s (5min) for large documents on high-quality models
-            response = requests.post(OLLAMA_ENDPOINT, headers=headers, json=payload, timeout=300)
-            response.raise_for_status()
-            data = response.json()
-            if "choices" in data and len(data["choices"]) > 0:
-                return data["choices"][0]["message"]["content"]
-            else:
-                raise ValueError(f"Invalid API response: {data}")
-                
-        except requests.exceptions.RequestException as e:
-            err_msg = str(e)
-            if hasattr(e, 'response') and e.response is not None:
-                err_msg += f" | Body: {e.response.text}"
-            
-            if attempt == 6:
-                logger.error(f"[Ollama] Final attempt failed: {err_msg}")
-                raise Exception(f"Ollama API Error: {err_msg}")
-                
-            delay = 2 ** (attempt + 1)
-            logger.warning(f"[Ollama] Request failed, retrying in {delay}s... ({err_msg})")
-            time.sleep(delay)
-            
-    raise Exception("Ollama API failed after 7 attempts")
+    last_error = None
+    for model_name in models_to_try:
+        for attempt in range(7):
+            try:
+                # Increase timeout to 300s (5min) for large documents on high-quality models.
+                return _post_ollama_request(prompt, model_name, json_format, max_tokens)
+            except requests.exceptions.RequestException as e:
+                err_msg = str(e)
+                response = getattr(e, "response", None)
+                if response is not None:
+                    err_msg += f" | Body: {response.text}"
+
+                last_error = err_msg
+
+                if response is not None and _is_subscription_error(response):
+                    logger.warning(
+                        f"[Ollama] Model '{model_name}' requires a subscription, trying fallback model. ({err_msg})"
+                    )
+                    break
+
+                if attempt == 6:
+                    logger.error(f"[Ollama] Final attempt failed for model '{model_name}': {err_msg}")
+                    break
+
+                delay = 2 ** (attempt + 1)
+                logger.warning(f"[Ollama] Request failed for model '{model_name}', retrying in {delay}s... ({err_msg})")
+                time.sleep(delay)
+            except ValueError as e:
+                last_error = str(e)
+                logger.error(f"[Ollama] Invalid response for model '{model_name}': {last_error}")
+                break
+
+    raise Exception(f"Ollama API Error: {last_error or 'all configured models failed'}")
 
 # ─── Classification ───────────────────────────────────────────────────────────
 
